@@ -1,8 +1,9 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "school management system",
+  "main": "server.js",
+  "types": "module",
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js"
