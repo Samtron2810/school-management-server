@@ -1,16 +1,10 @@
 import { Schema, model } from "mongoose";
 
-const teacherAssignmentSchema = new Schema(
+const classTeacherAssignmentSchema = new Schema(
   {
     teacher: {
       type: Schema.Types.ObjectId,
       ref: "Teacher",
-      required: true,
-    },
-
-    subject: {
-      type: Schema.Types.ObjectId,
-      ref: "Subject",
       required: true,
     },
 
@@ -26,12 +20,6 @@ const teacherAssignmentSchema = new Schema(
       required: true,
     },
 
-    term: {
-      type: Schema.Types.ObjectId,
-      ref: "Term",
-      required: true,
-    },
-
     isActive: {
       type: Boolean,
       default: true,
@@ -42,18 +30,31 @@ const teacherAssignmentSchema = new Schema(
   },
 );
 
-teacherAssignmentSchema.index(
+// One class can only have one class teacher per session
+classTeacherAssignmentSchema.index(
   {
-    subject: 1,
     schoolClass: 1,
     session: 1,
-    term: 1,
   },
   {
     unique: true,
   },
 );
 
-const TeacherAssignment = model("TeacherAssignment", teacherAssignmentSchema);
+// A teacher can only be class teacher of one class per session
+classTeacherAssignmentSchema.index(
+  {
+    teacher: 1,
+    session: 1,
+  },
+  {
+    unique: true,
+  },
+);
 
-export default TeacherAssignment;
+const ClassTeacherAssignment = model(
+  "ClassTeacherAssignment",
+  classTeacherAssignmentSchema,
+);
+
+export default ClassTeacherAssignment;

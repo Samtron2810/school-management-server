@@ -8,6 +8,7 @@ import subjectRoutes from "./subject.routes.js";
 import teacherRoutes from "./teacher.routes.js";
 import studentRoutes from "./student.routes.js";
 import enrollmentRoutes from "./enrollment.routes.js";
+import teacherAssignmentRoutes from "./teacherAssignment.routes.js";
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use("/subjects", subjectRoutes);
 router.use("/teachers", teacherRoutes);
 router.use("/students", studentRoutes);
 router.use("/enrollments", enrollmentRoutes);
+router.use("/teacher-assignments", teacherAssignmentRoutes);
 
 export default router;
