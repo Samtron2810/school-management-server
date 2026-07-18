@@ -5,6 +5,9 @@ import sessionRoutes from "./session.routes.js";
 import termRoutes from "./term.routes.js";
 import classRoutes from "./class.routes.js";
 import subjectRoutes from "./subject.routes.js";
+import teacherRoutes from "./teacher.routes.js";
+import studentRoutes from "./student.routes.js";
+import enrollmentRoutes from "./enrollment.routes.js";
 
 const router = Router();
 
@@ -20,5 +23,8 @@ router.use("/sessions", sessionRoutes);
 router.use("/terms", termRoutes);
 router.use("/classes", classRoutes);
 router.use("/subjects", subjectRoutes);
+router.use("/teachers", teacherRoutes);
+router.use("/students", studentRoutes);
+router.use("/enrollments", enrollmentRoutes);
 
 export default router;
