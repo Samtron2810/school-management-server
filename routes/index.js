@@ -9,6 +9,8 @@ import teacherRoutes from "./teacher.routes.js";
 import studentRoutes from "./student.routes.js";
 import enrollmentRoutes from "./enrollment.routes.js";
 import teacherAssignmentRoutes from "./teacherAssignment.routes.js";
+import parentRoutes from "./parent.routes.js";
+import parentStudentRoutes from "./parentStudent.routes.js";
 
 const router = Router();
 
@@ -28,5 +30,7 @@ router.use("/teachers", teacherRoutes);
 router.use("/students", studentRoutes);
 router.use("/enrollments", enrollmentRoutes);
 router.use("/teacher-assignments", teacherAssignmentRoutes);
+router.use("/parents", parentRoutes);
+router.use("/parent-students", parentStudentRoutes);
 
 export default router;

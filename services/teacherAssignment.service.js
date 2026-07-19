@@ -8,18 +8,6 @@ import ApiError from "../utils/ApiError.js";
 
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 
-const classSubject = await ClassSubject.findOne({
-  schoolClass: schoolClass._id,
-  subject: subject._id,
-});
-
-if (!classSubject) {
-  throw new ApiError(
-    400,
-    "This subject is not assigned to the selected class.",
-  );
-}
-
 const createTeacherAssignment = async (data) => {
   const { session, term } = await getCurrentAcademicContext();
 
@@ -36,6 +24,18 @@ const createTeacherAssignment = async (data) => {
   }
 
   const schoolClass = await SchoolClass.findById(data.schoolClass);
+
+  const classSubject = await ClassSubject.findOne({
+    schoolClass: schoolClass._id,
+    subject: subject._id,
+  });
+
+  if (!classSubject) {
+    throw new ApiError(
+      400,
+      "This subject is not assigned to the selected class.",
+    );
+  }
 
   if (!schoolClass) {
     throw new ApiError(404, "Class not found.");

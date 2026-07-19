@@ -29,6 +29,7 @@ const parentStudentSchema = new Schema(
         "Other",
       ],
       required: true,
+      trim: true,
     },
 
     isPrimaryContact: {
@@ -63,9 +64,24 @@ const parentStudentSchema = new Schema(
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      versionKey: false,
+    },
+    toObject: {
+      virtuals: true,
+      versionKey: false,
+    },
   },
 );
 
+/*
+|--------------------------------------------------------------------------
+| Indexes
+|--------------------------------------------------------------------------
+*/
+
+// Prevent duplicate parent-student relationships
 parentStudentSchema.index(
   {
     parent: 1,
@@ -75,6 +91,39 @@ parentStudentSchema.index(
     unique: true,
   },
 );
+
+// Fast lookup of a student's parents
+parentStudentSchema.index({
+  student: 1,
+  isActive: 1,
+});
+
+// Fast lookup of a parent's children
+parentStudentSchema.index({
+  parent: 1,
+  isActive: 1,
+});
+
+// Fast lookup when checking relationship rules
+parentStudentSchema.index({
+  student: 1,
+  relationship: 1,
+  isActive: 1,
+});
+
+// Fast lookup for primary contact
+parentStudentSchema.index({
+  student: 1,
+  isPrimaryContact: 1,
+  isActive: 1,
+});
+
+// Fast lookup for emergency contact
+parentStudentSchema.index({
+  student: 1,
+  isEmergencyContact: 1,
+  isActive: 1,
+});
 
 const ParentStudent = model("ParentStudent", parentStudentSchema);
 
