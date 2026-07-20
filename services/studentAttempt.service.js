@@ -67,6 +67,10 @@ const shuffleArray = (array) => {
   return shuffle(array);
 };
 
+const getAttemptStudentId = (attempt) => {
+  return attempt.student?._id ?? attempt.student;
+};
+
 const generateOptionOrder = (optionCount) => {
   return shuffle(
     Array.from(
@@ -278,7 +282,7 @@ const calculateScore = async (attempt) => {
     totalPossibleMarks += aq.marks;
   }
 
-  skippedQuestions = attempt.totalQuestions - answeredQuestions - wrongAnswers;
+  skippedQuestions = attempt.totalQuestions - answeredQuestions;
 
   const percentage =
     totalPossibleMarks === 0 ? 0 : (score / totalPossibleMarks) * 100;
@@ -303,12 +307,19 @@ const finalizeAttempt = async (attempt, status) => {
   const assessment = await Assessment.findById(attempt.assessment);
 
   const result = await calculateScore(attempt);
+  const passed = result.percentage >= assessment.passingScore;
 
   attempt.answeredQuestions = result.answeredQuestions;
+  attempt.correctAnswers = result.correctAnswers;
+  attempt.wrongAnswers = result.wrongAnswers;
+  attempt.skippedQuestions = result.skippedQuestions;
   attempt.score = result.score;
   attempt.percentage = result.percentage;
+  attempt.passed = passed;
   attempt.status = status;
   attempt.submittedAt = new Date();
+  attempt.gradedAt = new Date();
+  attempt.gradingVersion = 1;
 
   await attempt.save();
 
@@ -339,7 +350,7 @@ const getAttempt = async (attemptId) => {
 */
 
 const ensureStudentOwnsAttempt = (attempt, student) => {
-  if (attempt.student.toString() !== student._id.toString()) {
+  if (getAttemptStudentId(attempt).toString() !== student._id.toString()) {
     throw new ApiError(403, "Unauthorized.");
   }
 
@@ -435,6 +446,8 @@ const getAttemptQuestions = async (attemptId, user) => {
     throw new ApiError(403, "Only students can access assessment questions.");
   }
 
+  const student = await getStudentProfile(user._id);
+
   const attempt = await StudentAttempt.findById(attemptId)
     .populate("assessment")
     .populate("student");
@@ -443,7 +456,7 @@ const getAttemptQuestions = async (attemptId, user) => {
     throw new ApiError(404, "Attempt not found.");
   }
 
-  if (attempt.student.user.toString() !== user._id.toString()) {
+  if (getAttemptStudentId(attempt).toString() !== student._id.toString()) {
     throw new ApiError(403, "Unauthorized.");
   }
 
@@ -478,7 +491,7 @@ const getAttemptQuestions = async (attemptId, user) => {
   }));
 
   if (attempt.assessment.shuffleQuestions) {
-    shuffleArray(questions);
+    questions = shuffleArray(questions);
   }
 
   return questions;

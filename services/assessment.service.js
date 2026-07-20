@@ -1,5 +1,8 @@
 import Assessment from "../models/Assessment.js";
 import AssessmentQuestion from "../models/AssessmentQuestion.js";
+import Enrollment from "../models/Enrollment.js";
+import Student from "../models/Student.js";
+import StudentAttempt from "../models/StudentAttempt.js";
 import Teacher from "../models/Teacher.js";
 import TeacherAssignment from "../models/TeacherAssignment.js";
 import ClassSubject from "../models/ClassSubject.js";
@@ -27,6 +30,19 @@ const getTeacherProfile = async (userId) => {
   }
 
   return teacher;
+};
+
+const getStudentProfile = async (userId) => {
+  const student = await Student.findOne({
+    user: userId,
+    isActive: true,
+  });
+
+  if (!student) {
+    throw new ApiError(404, "Student profile not found.");
+  }
+
+  return student;
 };
 
 const getAssignment = async (teacherId, assignmentId, role) => {
@@ -69,7 +85,6 @@ const getClassSubject = async (assignment) => {
 const refreshAssessmentStatistics = async (assessmentId, session = null) => {
   const assessmentQuestions = await AssessmentQuestion.find({
     assessment: assessmentId,
-    isActive: true,
   }).session(session);
 
   let totalMarks = 0;
@@ -506,6 +521,132 @@ const getAssessments = async (filter = {}) => {
 
 /*
 |--------------------------------------------------------------------------
+| Get Available Assessments For Student
+|--------------------------------------------------------------------------
+*/
+
+const getAvailableAssessments = async (user) => {
+  if (user.role !== "student") {
+    throw new ApiError(403, "Only students can access available assessments.");
+  }
+
+  const student = await getStudentProfile(user._id);
+  const { session, term } = await getCurrentAcademicContext();
+  const now = new Date();
+
+  const enrollment = await Enrollment.findOne({
+    student: student._id,
+    session: session._id,
+    term: term._id,
+    status: "Active",
+  }).populate("schoolClass");
+
+  if (!enrollment) {
+    return [];
+  }
+
+  const classSubjects = await ClassSubject.find({
+    schoolClass: enrollment.schoolClass._id,
+    isActive: true,
+  }).select("_id");
+
+  if (classSubjects.length === 0) {
+    return [];
+  }
+
+  const assessments = await Assessment.find({
+    classSubject: {
+      $in: classSubjects.map((classSubject) => classSubject._id),
+    },
+    session: session._id,
+    term: term._id,
+    isActive: true,
+    isPublished: true,
+    availableTo: {
+      $gte: now,
+    },
+  })
+    .populate("teacher")
+    .populate("teacherAssignment")
+    .populate({
+      path: "classSubject",
+      populate: [
+        {
+          path: "subject",
+        },
+        {
+          path: "schoolClass",
+        },
+      ],
+    })
+    .populate("session")
+    .populate("term")
+    .sort({
+      availableFrom: -1,
+      createdAt: -1,
+    });
+
+  if (assessments.length === 0) {
+    return [];
+  }
+
+  const attempts = await StudentAttempt.find({
+    assessment: {
+      $in: assessments.map((assessment) => assessment._id),
+    },
+    student: student._id,
+    isActive: true,
+  })
+    .select(
+      "assessment status attemptNumber score percentage submittedAt expiresAt startedAt createdAt",
+    )
+    .sort({
+      attemptNumber: -1,
+      createdAt: -1,
+    });
+
+  const attemptsByAssessment = new Map();
+
+  for (const attempt of attempts) {
+    const key = attempt.assessment.toString();
+    const current = attemptsByAssessment.get(key) ?? [];
+    current.push(attempt);
+    attemptsByAssessment.set(key, current);
+  }
+
+  return assessments.map((assessment) => {
+    const assessmentAttempts =
+      attemptsByAssessment.get(assessment._id.toString()) ?? [];
+    const latestAttempt = assessmentAttempts[0] ?? null;
+    const submittedAttempts = assessmentAttempts.filter((attempt) =>
+      ["Submitted", "Auto Submitted"].includes(attempt.status),
+    ).length;
+    const isUpcoming = now < assessment.availableFrom;
+
+    return {
+      ...assessment.toObject(),
+      availabilityStatus: isUpcoming ? "Upcoming" : "Available",
+      attemptSummary: {
+        totalAttempts: assessmentAttempts.length,
+        submittedAttempts,
+        remainingAttempts: Math.max(
+          0,
+          assessment.maxAttempts - submittedAttempts,
+        ),
+        hasInProgressAttempt:
+          assessmentAttempts.some((attempt) => attempt.status === "In Progress"),
+        canStart:
+          !isUpcoming &&
+          submittedAttempts < assessment.maxAttempts &&
+          !assessmentAttempts.some((attempt) => attempt.status === "In Progress"),
+        latestAttempt,
+      },
+    };
+  });
+};
+
+/*
+|--------------------------------------------------------------------------
 | Exports
 |--------------------------------------------------------------------------
 */
@@ -520,4 +661,5 @@ export default {
   removeQuestionsFromAssessment,
   getAssessment,
   getAssessments,
+  getAvailableAssessments,
 };

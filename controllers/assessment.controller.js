@@ -167,3 +167,20 @@ export const getAssessments = asyncHandler(async (req, res) => {
     data: assessments,
   });
 });
+
+/*
+|--------------------------------------------------------------------------
+| Get Available Assessments
+|--------------------------------------------------------------------------
+*/
+
+export const getAvailableAssessments = asyncHandler(async (req, res) => {
+  const assessments = await assessmentService.getAvailableAssessments(
+    req.user,
+  );
+
+  return res.json({
+    success: true,
+    data: assessments,
+  });
+});

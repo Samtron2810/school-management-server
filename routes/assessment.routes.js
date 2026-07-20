@@ -34,6 +34,13 @@ router.post(
 router.get("/", authenticate, assessmentController.getAssessments);
 
 router.get(
+  "/available",
+  authenticate,
+  authorize("student"),
+  assessmentController.getAvailableAssessments,
+);
+
+router.get(
   "/:id",
   authenticate,
   assessmentIdParamValidator,

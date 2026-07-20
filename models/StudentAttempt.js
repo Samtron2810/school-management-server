@@ -53,6 +53,24 @@ const studentAttemptSchema = new Schema(
       min: 0,
     },
 
+    correctAnswers: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    wrongAnswers: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    skippedQuestions: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     flaggedQuestions: {
       type: Number,
       default: 0,
@@ -73,6 +91,11 @@ const studentAttemptSchema = new Schema(
     submittedAt: {
       type: Date,
       default: null,
+    },
+
+    passed: {
+      type: Boolean,
+      default: false,
     },
 
     gradedAt: {
