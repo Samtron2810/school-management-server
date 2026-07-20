@@ -3,7 +3,7 @@ import ApiError from "../utils/ApiError.js";
 
 const createClass = async (data) => {
   const existingClass = await SchoolClass.findOne({
-    name: data.name,
+    className: data.className,
     arm: data.arm,
   });
 
@@ -16,7 +16,7 @@ const createClass = async (data) => {
 
 const getClasses = async () => {
   return await SchoolClass.find().sort({
-    name: 1,
+    className: 1,
     arm: 1,
   });
 };

@@ -11,6 +11,12 @@ import enrollmentRoutes from "./enrollment.routes.js";
 import teacherAssignmentRoutes from "./teacherAssignment.routes.js";
 import parentRoutes from "./parent.routes.js";
 import parentStudentRoutes from "./parentStudent.routes.js";
+import lessonRoutes from "./lesson.routes.js";
+import attendanceRoutes from "./attendance.routes.js";
+import assessmentRoutes from "./assessment.routes.js";
+import questionRoutes from "./question.routes.js";
+import studentAttemptRoutes from "./studentAttempt.routes.js";
+import studentAnswerRoutes from "./studentAnswer.routes.js";
 
 const router = Router();
 
@@ -32,5 +38,11 @@ router.use("/enrollments", enrollmentRoutes);
 router.use("/teacher-assignments", teacherAssignmentRoutes);
 router.use("/parents", parentRoutes);
 router.use("/parent-students", parentStudentRoutes);
+router.use("/lessons", lessonRoutes);
+router.use("/attendance", attendanceRoutes);
+router.use("/assessments", assessmentRoutes);
+router.use("/questions", questionRoutes);
+router.use("/student-attempts", studentAttemptRoutes);
+router.use("/student-answers", studentAnswerRoutes);
 
 export default router;
