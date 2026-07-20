@@ -27,6 +27,7 @@ const getAttendanceByDate = asyncHandler(async (req, res) => {
   const attendance = await attendanceService.getAttendanceByDate(
     req.params.teacherAssignmentId,
     req.query.date,
+    req.user,
   );
 
   return res

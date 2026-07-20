@@ -4,6 +4,8 @@ import TeacherAssignment from "../models/TeacherAssignment.js";
 import Student from "../models/Student.js";
 import Enrollment from "../models/Enrollment.js";
 import ClassSubject from "../models/ClassSubject.js";
+import Parent from "../models/Parent.js";
+import ParentStudent from "../models/ParentStudent.js";
 
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
@@ -36,6 +38,111 @@ const getClassSubject = async (assignment) => {
   }
 
   return classSubject;
+};
+
+const authorizeStudentAttendanceAccess = async (studentId, user) => {
+  if (user.role === "admin") {
+    return;
+  }
+
+  if (user.role === "student") {
+    const student = await Student.findOne({ user: user._id });
+
+    if (!student) {
+      throw new ApiError(403, "Student profile not found.");
+    }
+
+    if (student._id.toString() !== studentId.toString()) {
+      throw new ApiError(
+        403,
+        "You are not allowed to view this student's attendance.",
+      );
+    }
+
+    return;
+  }
+
+  if (user.role === "parent") {
+    const parent = await Parent.findOne({ user: user._id });
+
+    if (!parent) {
+      throw new ApiError(403, "Parent profile not found.");
+    }
+
+    const relation = await ParentStudent.findOne({
+      parent: parent._id,
+      student: studentId,
+      isActive: true,
+    });
+
+    if (!relation) {
+      throw new ApiError(
+        403,
+        "You are not allowed to view this student's attendance.",
+      );
+    }
+
+    return;
+  }
+
+  if (user.role === "teacher") {
+    const teacher = await getTeacherProfile(user._id);
+
+    if (!teacher) {
+      throw new ApiError(404, "Teacher profile not found.");
+    }
+
+    const { session, term } = await getCurrentAcademicContext();
+
+    const enrollment = await Enrollment.findOne({
+      student: studentId,
+      session: session._id,
+      term: term._id,
+      status: "Active",
+    });
+
+    if (!enrollment) {
+      throw new ApiError(404, "No active enrollment found for this student.");
+    }
+
+    const assignment = await TeacherAssignment.findOne({
+      teacher: teacher._id,
+      schoolClass: enrollment.schoolClass,
+      session: session._id,
+      term: term._id,
+      isActive: true,
+    });
+
+    if (!assignment) {
+      throw new ApiError(
+        403,
+        "You are not allowed to view this student's attendance.",
+      );
+    }
+
+    return;
+  }
+
+  throw new ApiError(
+    403,
+    "You are not allowed to view this student's attendance.",
+  );
+};
+
+const authorizeTeacherAssignmentAccess = async (assignment, user) => {
+  if (user.role !== "teacher") {
+    return;
+  }
+
+  const teacher = await getTeacherProfile(user._id);
+
+  if (!teacher) {
+    throw new ApiError(404, "Teacher profile not found.");
+  }
+
+  if (assignment.teacher.toString() !== teacher._id.toString()) {
+    throw new ApiError(403, "You are not authorized to view this attendance.");
+  }
 };
 
 /*
@@ -79,6 +186,8 @@ const markAttendance = async (data, user) => {
     schoolClass: assignment.schoolClass,
 
     session: session._id,
+
+    term: term._id,
 
     status: "Active",
   }).select("student");
@@ -169,12 +278,14 @@ const markAttendance = async (data, user) => {
 |--------------------------------------------------------------------------
 */
 
-const getAttendanceByDate = async (teacherAssignmentId, date) => {
+const getAttendanceByDate = async (teacherAssignmentId, date, user) => {
   const assignment = await findDocumentOrFail(
     TeacherAssignment,
     teacherAssignmentId,
     "Teacher Assignment",
   );
+
+  await authorizeTeacherAssignmentAccess(assignment, user);
 
   const classSubject = await getClassSubject(assignment);
 
@@ -206,6 +317,8 @@ const getAttendanceByDate = async (teacherAssignmentId, date) => {
 
 const getStudentAttendance = async (studentId, user) => {
   await findDocumentOrFail(Student, studentId, "Student");
+
+  await authorizeStudentAttendanceAccess(studentId, user);
 
   return await Attendance.find({
     student: studentId,
@@ -246,6 +359,8 @@ const getStudentAttendance = async (studentId, user) => {
 
 const getAttendanceSummary = async (studentId, user) => {
   await findDocumentOrFail(Student, studentId, "Student");
+
+  await authorizeStudentAttendanceAccess(studentId, user);
 
   const attendance = await Attendance.find({
     student: studentId,

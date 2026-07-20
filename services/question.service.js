@@ -503,7 +503,7 @@ export default {
   updateQuestion,
   deleteQuestion,
   duplicateQuestion,
-  getQuestion: getQuestionById,
+  getQuestion,
   getQuestions,
   deleteQuestions,
 };

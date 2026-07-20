@@ -109,15 +109,23 @@ const createAssessment = async (data, user) => {
     throw new ApiError(403, "Unauthorized.");
   }
 
-  const teacher = await getTeacherProfile(user._id);
+  let teacher;
+
+  if (user.role === "teacher") {
+    teacher = await getTeacherProfile(user._id);
+  }
 
   const assignment = await getAssignment(
-    teacher._id,
+    teacher ? teacher._id : null,
     data.teacherAssignment,
     user.role,
   );
 
   const classSubject = await getClassSubject(assignment);
+
+  if (!teacher) {
+    teacher = await findDocumentOrFail(Teacher, assignment.teacher, "Teacher");
+  }
 
   const { session, term } = await getCurrentAcademicContext();
 

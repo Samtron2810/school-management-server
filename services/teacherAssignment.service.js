@@ -25,6 +25,10 @@ const createTeacherAssignment = async (data) => {
 
   const schoolClass = await SchoolClass.findById(data.schoolClass);
 
+  if (!schoolClass) {
+    throw new ApiError(404, "Class not found.");
+  }
+
   const classSubject = await ClassSubject.findOne({
     schoolClass: schoolClass._id,
     subject: subject._id,
@@ -35,10 +39,6 @@ const createTeacherAssignment = async (data) => {
       400,
       "This subject is not assigned to the selected class.",
     );
-  }
-
-  if (!schoolClass) {
-    throw new ApiError(404, "Class not found.");
   }
 
   const existingAssignment = await TeacherAssignment.findOne({

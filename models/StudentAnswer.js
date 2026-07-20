@@ -44,16 +44,6 @@ const studentAnswerSchema = new Schema(
   },
 );
 
-/*
-|--------------------------------------------------------------------------
-| Indexes
-|--------------------------------------------------------------------------
-*/
-
-studentAnswerSchema.index({
-  isCorrect: 1,
-});
-
 const StudentAnswer = model("StudentAnswer", studentAnswerSchema);
 
 export default StudentAnswer;
