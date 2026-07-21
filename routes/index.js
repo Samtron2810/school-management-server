@@ -19,6 +19,9 @@ import assessmentRoutes from "./assessment.routes.js";
 import questionRoutes from "./question.routes.js";
 import studentAttemptRoutes from "./studentAttempt.routes.js";
 import studentAnswerRoutes from "./studentAnswer.routes.js";
+import resultRoutes from "./result.routes.js";
+import announcementRoutes from "./announcement.routes.js";
+import dashboardRoutes from "./dashboard.routes.js";
 
 const router = Router();
 
@@ -48,5 +51,8 @@ router.use("/assessments", assessmentRoutes);
 router.use("/questions", questionRoutes);
 router.use("/student-attempts", studentAttemptRoutes);
 router.use("/student-answers", studentAnswerRoutes);
+router.use("/results", resultRoutes);
+router.use("/announcements", announcementRoutes);
+router.use("/dashboard", dashboardRoutes);
 
 export default router;
