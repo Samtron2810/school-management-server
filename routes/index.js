@@ -22,6 +22,7 @@ import studentAnswerRoutes from "./studentAnswer.routes.js";
 import resultRoutes from "./result.routes.js";
 import announcementRoutes from "./announcement.routes.js";
 import dashboardRoutes from "./dashboard.routes.js";
+import promotionRoutes from "./promotion.routes.js";
 
 const router = Router();
 
@@ -54,5 +55,6 @@ router.use("/student-answers", studentAnswerRoutes);
 router.use("/results", resultRoutes);
 router.use("/announcements", announcementRoutes);
 router.use("/dashboard", dashboardRoutes);
+router.use("/promotions", promotionRoutes);
 
 export default router;
