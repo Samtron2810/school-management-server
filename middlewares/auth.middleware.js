@@ -2,20 +2,37 @@ import jwt from "jsonwebtoken";
 
 import env from "../config/env.js";
 
+import AccessTokenBlacklist from "../models/AccessTokenBlacklist.js";
 import User from "../models/User.js";
 
 import ApiError from "../utils/ApiError.js";
 
 import asyncHandler from "../utils/asyncHandler.js";
 
-export const protect = asyncHandler(async (req, res, next) => {
-  let token;
-
+const getAccessTokenFromRequest = (req) => {
   const authHeader = req.headers.authorization;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
-    token = authHeader.split(" ")[1];
+    return authHeader.split(" ")[1];
   }
+
+  return req.cookies?.accessToken ?? null;
+};
+
+const isTokenBlacklisted = async (jti) => {
+  if (!jti) {
+    return false;
+  }
+
+  const entry = await AccessTokenBlacklist.findOne({
+    jti,
+  });
+
+  return Boolean(entry);
+};
+
+export const protect = asyncHandler(async (req, res, next) => {
+  const token = getAccessTokenFromRequest(req);
 
   if (!token) {
     throw new ApiError(401, "Access denied. No token provided.");
@@ -29,6 +46,10 @@ export const protect = asyncHandler(async (req, res, next) => {
     throw new ApiError(401, "Invalid or expired access token.");
   }
 
+  if (decoded.tokenType && decoded.tokenType !== "access") {
+    throw new ApiError(401, "Invalid access token.");
+  }
+
   const user = await User.findById(decoded.id);
 
   if (!user) {
@@ -39,19 +60,43 @@ export const protect = asyncHandler(async (req, res, next) => {
     throw new ApiError(403, "Your account has been deactivated.");
   }
 
+  const tokenVersion = decoded.tokenVersion ?? 0;
+
+  if ((user.tokenVersion ?? 0) !== tokenVersion) {
+    throw new ApiError(401, "Your session has expired. Please sign in again.");
+  }
+
+  if (
+    user.passwordChangedAt &&
+    decoded.iat &&
+    Math.floor(user.passwordChangedAt.getTime() / 1000) > decoded.iat
+  ) {
+    throw new ApiError(
+      401,
+      "Your password has changed. Please sign in again.",
+    );
+  }
+
+  if (await isTokenBlacklisted(decoded.jti)) {
+    throw new ApiError(401, "This session has been revoked.");
+  }
+
+  req.accessToken = token;
+  req.accessTokenPayload = decoded;
   req.user = user;
 
   next();
 });
 
 export const authorize = (...roles) => {
-  return (req, res, next) => {
+  return asyncHandler(async (req, res, next) => {
     if (!roles.includes(req.user.role)) {
-      return next(
-        new ApiError(403, "You are not authorized to perform this action."),
+      throw new ApiError(
+        403,
+        "You are not authorized to perform this action.",
       );
     }
 
     next();
-  };
+  });
 };

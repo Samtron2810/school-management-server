@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 import env from "../config/env.js";
 
 const generateAccessToken = (user) => {
@@ -6,6 +7,9 @@ const generateAccessToken = (user) => {
     {
       id: user._id,
       role: user.role,
+      tokenVersion: user.tokenVersion ?? 0,
+      tokenType: "access",
+      jti: randomUUID(),
     },
     env.ACCESS_TOKEN_SECRET,
     {
