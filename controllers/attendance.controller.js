@@ -114,6 +114,34 @@ const deleteAttendance = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "Attendance deleted successfully.", attendance));
 });
 
+// Daily register for a whole class (admin/teacher).
+const getClassRegister = asyncHandler(async (req, res) => {
+  const register = await attendanceService.getClassRegister(
+    req.query.schoolClass,
+    req.query.date,
+    req.user,
+  );
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Class register fetched successfully.", register));
+});
+
+// Date-range attendance summary per student for a class (admin/teacher).
+const getClassAttendanceSummary = asyncHandler(async (req, res) => {
+  const summary = await attendanceService.getClassAttendanceSummary(
+    req.query.schoolClass,
+    req.query,
+    req.user,
+  );
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, "Class attendance summary fetched successfully.", summary),
+    );
+});
+
 export default {
   markAttendance,
 
@@ -122,6 +150,10 @@ export default {
   getStudentAttendance,
 
   getAttendanceSummary,
+
+  getClassRegister,
+
+  getClassAttendanceSummary,
 
   updateAttendance,
 

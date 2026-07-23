@@ -48,7 +48,7 @@ const getResultById = asyncHandler(async (req, res) => {
 });
 
 const computeGrade = asyncHandler(async (req, res) => {
-  const grading = resultService.computeGrade(
+  const grading = await resultService.computeGrade(
     req.body.score,
     req.body.totalMarks,
     req.body.percentage,
@@ -79,6 +79,18 @@ const createResultFromAttempt = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, "Result generated successfully.", result));
 });
 
+const generateClassReportCards = asyncHandler(async (req, res) => {
+  const payload = await resultService.generateClassReportCards(
+    req.query.schoolClass,
+    req.query,
+    req.user,
+  );
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Report cards generated successfully.", payload));
+});
+
 export default {
   createResult,
   updateResult,
@@ -87,5 +99,6 @@ export default {
   getResultById,
   computeGrade,
   generateReportCard,
+  generateClassReportCards,
   createResultFromAttempt,
 };

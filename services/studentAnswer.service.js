@@ -328,12 +328,83 @@ const reviewAnswers = async (attemptId, user) => {
 
   const attemptQuestionIds = attemptQuestions.map((aq) => aq._id);
 
-  const answers = await StudentAnswer.find({
+  // Resolve each attempt question to its question details so the review
+  // screen can render text, options, marks and (when allowed) the
+  // correct answer and explanation.
+  const assessmentQuestions = await AssessmentQuestion.find({
+    _id: { $in: attemptQuestions.map((aq) => aq.assessmentQuestion) },
+  }).populate("question");
+
+  const assessmentQuestionByAttemptQuestion = new Map();
+  attemptQuestions.forEach((aq) => {
+    assessmentQuestionByAttemptQuestion.set(
+      aq._id.toString(),
+      assessmentQuestions.find(
+        (item) => item._id.toString() === aq.assessmentQuestion.toString(),
+      ),
+    );
+  });
+
+  const showCorrect = attempt.assessment?.showCorrectAnswers !== false;
+
+  const buildReviewItem = (answer, assessmentQuestion) => {
+    const question = assessmentQuestion?.question ?? null;
+
+    return {
+      _id: answer?._id ?? null,
+      question: question
+        ? {
+            _id: question._id,
+            question: question.question,
+            options: question.options,
+            ...(showCorrect
+              ? {
+                  correctAnswer: question.correctAnswer,
+                  explanation: question.explanation,
+                }
+              : {}),
+          }
+        : null,
+      marks: assessmentQuestion?.marks ?? 0,
+      order: assessmentQuestion?.order ?? 0,
+      selectedAnswer: answer?.selectedAnswer ?? null,
+      isCorrect: answer?.isCorrect ?? false,
+      marksAwarded: answer?.marksAwarded ?? 0,
+      answeredAt: answer?.answeredAt ?? null,
+    };
+  };
+
+  const rawAnswers = await StudentAnswer.find({
     studentAttemptQuestion: { $in: attemptQuestionIds },
     isActive: true,
-  }).sort({
-    answeredAt: 1,
   });
+
+  const answers = rawAnswers.map((answer) =>
+    buildReviewItem(
+      answer,
+      assessmentQuestionByAttemptQuestion.get(
+        answer.studentAttemptQuestion.toString(),
+      ),
+    ),
+  );
+
+  // Include never-answered (skipped) questions so the review is complete.
+  const answeredAttemptQuestionIds = new Set(
+    rawAnswers.map((answer) => answer.studentAttemptQuestion.toString()),
+  );
+
+  attemptQuestions.forEach((aq) => {
+    if (answeredAttemptQuestionIds.has(aq._id.toString())) return;
+
+    answers.push(
+      buildReviewItem(
+        null,
+        assessmentQuestionByAttemptQuestion.get(aq._id.toString()),
+      ),
+    );
+  });
+
+  answers.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
   return {
     attempt,

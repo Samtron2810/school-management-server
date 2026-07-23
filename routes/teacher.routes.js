@@ -6,7 +6,10 @@ import { protect, authorize } from "../middlewares/auth.middleware.js";
 
 import validate from "../middlewares/validation.middleware.js";
 
-import { createTeacherValidator } from "../validators/teacher.validator.js";
+import {
+  createTeacherValidator,
+  updateTeacherValidator,
+} from "../validators/teacher.validator.js";
 
 const router = Router();
 
@@ -20,5 +23,21 @@ router.post(
 );
 
 router.get("/", protect, authorize("admin"), teacherController.getTeachers);
+
+router.get(
+  "/:id",
+  protect,
+  authorize("admin"),
+  teacherController.getTeacher,
+);
+
+router.patch(
+  "/:id",
+  protect,
+  authorize("admin"),
+  updateTeacherValidator,
+  validate,
+  teacherController.updateTeacher,
+);
 
 export default router;

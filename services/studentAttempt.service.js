@@ -9,6 +9,7 @@ import Question from "../models/Question.js";
 
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
+import Teacher from "../models/Teacher.js";
 
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 
@@ -416,20 +417,67 @@ const getStudentAttempt = async (attemptId, user) => {
   }).populate("assessment");
 };
 
-/*
+/* 
 |--------------------------------------------------------------------------
 | Get Student Attempts
 |--------------------------------------------------------------------------
 */
 
-const getStudentAttempts = async (user) => {
-  const student = await getStudentProfile(user._id);
-
-  return await StudentAttempt.find({
-    student: student._id,
+// Student → own attempts. Teacher → attempts for their own assessments.
+// Admin → everything. All three can filter via ?assessment= & ?status=.
+const getStudentAttempts = async (query, user) => {
+  const filter = {
     isActive: true,
-  })
+  };
+
+  if (query.assessment) filter.assessment = query.assessment;
+  if (query.status) filter.status = query.status;
+  if (query.student && user.role !== "student") filter.student = query.student;
+
+  if (user.role === "student") {
+    const student = await getStudentProfile(user._id);
+    filter.student = student._id;
+  }
+
+  if (user.role === "teacher") {
+    const teacher = await Teacher.findOne({
+      user: user._id,
+      isActive: true,
+    });
+
+    if (!teacher) {
+      throw new ApiError(404, "Teacher profile not found.");
+    }
+
+    const assessments = await Assessment.find({
+      teacher: teacher._id,
+    }).select("_id");
+
+    const assessmentIds = assessments.map((assessment) => assessment._id);
+
+    // A teacher filtering on a specific assessment they don't own gets
+    // an empty result rather than other teachers' data.
+    if (
+      filter.assessment &&
+      !assessmentIds.some((id) => id.toString() === filter.assessment.toString())
+    ) {
+      return [];
+    }
+
+    if (!filter.assessment) {
+      filter.assessment = { $in: assessmentIds };
+    }
+  }
+
+  return await StudentAttempt.find(filter)
     .populate("assessment")
+    .populate({
+      path: "student",
+      populate: {
+        path: "user",
+        select: "firstName lastName otherName username",
+      },
+    })
     .sort({
       createdAt: -1,
     });

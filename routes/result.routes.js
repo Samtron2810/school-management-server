@@ -8,6 +8,13 @@ import authorize from "../middlewares/authorize.js";
 const router = Router();
 
 router.get("/", authenticate, resultController.getResults);
+// Bulk: every student in a class (admins/teachers).
+router.get(
+  "/report-cards",
+  authenticate,
+  authorize("admin", "teacher"),
+  resultController.generateClassReportCards,
+);
 router.get(
   "/report-card/:studentId",
   authenticate,

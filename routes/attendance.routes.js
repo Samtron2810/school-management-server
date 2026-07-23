@@ -59,6 +59,22 @@ router.get(
   attendanceController.getStudentAttendance,
 );
 
+// Daily register for a class: GET /attendance/register?schoolClass=&date=
+router.get(
+  "/register",
+  protect,
+  authorize("admin", "teacher"),
+  attendanceController.getClassRegister,
+);
+
+// Class summary over a range: GET /attendance/summary?schoolClass=&from=&to=
+router.get(
+  "/summary",
+  protect,
+  authorize("admin", "teacher"),
+  attendanceController.getClassAttendanceSummary,
+);
+
 router.get(
   "/summary/:studentId",
   protect,

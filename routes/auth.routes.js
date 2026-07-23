@@ -4,6 +4,7 @@ import authController from "../controllers/auth.controller.js";
 import {
   loginValidator,
   changePasswordValidator,
+  updateMeValidator,
 } from "../validators/auth.validator.js";
 import validate from "../middlewares/validation.middleware.js";
 import { protect } from "../middlewares/auth.middleware.js";
@@ -37,6 +38,15 @@ router.post(
 );
 
 router.get("/me", protect, authController.me);
+
+router.patch(
+  "/me",
+  protect,
+  csrfProtection,
+  updateMeValidator,
+  validate,
+  authController.updateMe,
+);
 
 router.patch(
   "/change-password",

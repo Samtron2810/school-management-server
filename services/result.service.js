@@ -16,8 +16,10 @@ import Term from "../models/Term.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import settingService from "./setting.service.js";
 
-const gradeBands = [
+// Fallback used only when school settings can't be loaded.
+const defaultGradeBands = [
   { min: 70, grade: "A", gradePoint: 5, remark: "Excellent" },
   { min: 60, grade: "B", gradePoint: 4, remark: "Very Good" },
   { min: 50, grade: "C", gradePoint: 3, remark: "Good" },
@@ -25,6 +27,36 @@ const gradeBands = [
   { min: 40, grade: "E", gradePoint: 1, remark: "Pass" },
   { min: 0, grade: "F", gradePoint: 0, remark: "Fail" },
 ];
+
+// Grade bands + passing score are configurable per school (admin →
+// /settings), so grading always reads the current settings.
+const getGradingConfig = async () => {
+  let settings = null;
+  try {
+    settings = await settingService.getSettings();
+  } catch {
+    settings = null;
+  }
+
+  const bands =
+    settings && Array.isArray(settings.gradeBands) && settings.gradeBands.length > 0
+      ? settings.gradeBands
+      : null;
+
+  return {
+    gradeBands: bands
+      ? bands
+          .map((band) => ({
+            grade: band.grade,
+            min: Number(band.minScore),
+            gradePoint: Number(band.gradePoint ?? 0),
+            remark: band.remark ?? "",
+          }))
+          .sort((a, b) => b.min - a.min)
+      : defaultGradeBands,
+    passingScore: Number(settings?.passingScore ?? 40),
+  };
+};
 
 const resolveId = (value) => {
   if (!value) {
@@ -77,7 +109,7 @@ const getParentProfile = async (userId) => {
   return parent;
 };
 
-const computeGrade = (score, totalMarks, percentageInput = null) => {
+const computeGrade = async (score, totalMarks, percentageInput = null) => {
   const total = Number(totalMarks) || 0;
   const obtained = Number(score) || 0;
   const percentage =
@@ -87,6 +119,8 @@ const computeGrade = (score, totalMarks, percentageInput = null) => {
         ? (obtained / total) * 100
         : 0;
 
+  const { gradeBands, passingScore } = await getGradingConfig();
+
   const band =
     gradeBands.find((entry) => percentage >= entry.min) ?? gradeBands.at(-1);
 
@@ -95,7 +129,7 @@ const computeGrade = (score, totalMarks, percentageInput = null) => {
     grade: band.grade,
     gradePoint: band.gradePoint,
     remark: band.remark,
-    passed: percentage >= 40,
+    passed: percentage >= passingScore,
   };
 };
 
@@ -162,7 +196,7 @@ const buildResultPayload = async (data) => {
   const score =
     Number(data.score) || Number(attempt?.score) || 0;
 
-  const computed = computeGrade(score, totalMarks, data.percentage);
+  const computed = await computeGrade(score, totalMarks, data.percentage);
 
   let classSubject = null;
 
@@ -602,5 +636,58 @@ export default {
   getResults,
   getResultById,
   generateReportCard,
+  generateClassReportCards,
   createFromAttempt,
 };
+
+/*
+|--------------------------------------------------------------------------
+| Bulk Report Cards (admins/teachers; printing a whole class at once)
+|--------------------------------------------------------------------------
+*/
+
+// GET /results/report-cards?schoolClass=&session=&term=
+// Reuses the single-student generator for every actively-enrolled student
+// in the class; a student whose card fails (e.g. no data yet) is skipped
+// instead of failing the whole batch.
+async function generateClassReportCards(schoolClassId, query, user) {
+  if (!["admin", "teacher"].includes(user.role)) {
+    throw new ApiError(403, "You are not authorized to generate report cards.");
+  }
+
+  const schoolClass = await findDocumentOrFail(
+    SchoolClass,
+    schoolClassId,
+    "Class",
+  );
+
+  let sessionId = query.session;
+  if (!sessionId) {
+    const context = await getCurrentAcademicContext();
+    sessionId = context.session._id;
+  }
+  const session = await findDocumentOrFail(Session, sessionId, "Session");
+
+  const enrollments = await Enrollment.find({
+    schoolClass: schoolClass._id,
+    session: session._id,
+    status: "Active",
+  }).select("student");
+
+  const cards = await Promise.all(
+    enrollments.map(async (enrollment) => {
+      try {
+        return await generateReportCard(enrollment.student, query, user);
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return {
+    schoolClass,
+    session,
+    count: cards.filter(Boolean).length,
+    reportCards: cards.filter(Boolean),
+  };
+}

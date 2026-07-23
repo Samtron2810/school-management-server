@@ -267,6 +267,27 @@ const me = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "User fetched successfully", req.user));
 });
 
+// Self-service profile update (own account only).
+const updateMe = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+
+  if (!user) {
+    throw new ApiError(404, "User not found.");
+  }
+
+  for (const field of ["firstName", "lastName", "otherName", "phoneNumber"]) {
+    if (req.body[field] !== undefined) user[field] = req.body[field];
+  }
+
+  if (req.body.avatarUrl !== undefined) user.avatar.url = req.body.avatarUrl;
+
+  await user.save();
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Profile updated successfully.", user));
+});
+
 const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
@@ -298,6 +319,7 @@ const changePassword = asyncHandler(async (req, res) => {
 export default {
   login,
   refreshToken,
+  updateMe,
   logout,
   logoutAll,
   getCsrfToken,

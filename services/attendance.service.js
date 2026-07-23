@@ -4,6 +4,7 @@ import TeacherAssignment from "../models/TeacherAssignment.js";
 import Student from "../models/Student.js";
 import Enrollment from "../models/Enrollment.js";
 import ClassSubject from "../models/ClassSubject.js";
+import SchoolClass from "../models/SchoolClass.js";
 import Parent from "../models/Parent.js";
 import ParentStudent from "../models/ParentStudent.js";
 
@@ -476,7 +477,141 @@ export default {
 
   getAttendanceSummary,
 
+  getClassRegister,
+
+  getClassAttendanceSummary,
+
   updateAttendance,
 
   deleteAttendance,
 };
+
+/*
+|--------------------------------------------------------------------------
+| Class Register (daily view for admins/teachers)
+|--------------------------------------------------------------------------
+*/
+
+async function getClassRegister(schoolClassId, date, user) {
+  const schoolClass = await findDocumentOrFail(
+    SchoolClass,
+    schoolClassId,
+    "Class",
+  );
+
+  const classSubjects = await ClassSubject.find({
+    schoolClass: schoolClass._id,
+  }).select("_id");
+
+  const day = date ? new Date(date) : new Date();
+  const startOfDay = new Date(day);
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(day);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  return await Attendance.find({
+    classSubject: { $in: classSubjects.map((item) => item._id) },
+    date: { $gte: startOfDay, $lte: endOfDay },
+    isActive: true,
+  })
+    .populate({
+      path: "student",
+      populate: {
+        path: "user",
+        select: "firstName lastName otherName admissionNumber avatar",
+      },
+    })
+    .populate({
+      path: "classSubject",
+      populate: {
+        path: "subject",
+        select: "name code",
+      },
+    })
+    .sort({ createdAt: 1 })
+    .lean();
+}
+
+/*
+|--------------------------------------------------------------------------
+| Class Attendance Summary (date-range report for admins/teachers)
+|--------------------------------------------------------------------------
+*/
+
+async function getClassAttendanceSummary(schoolClassId, query, user) {
+  const schoolClass = await findDocumentOrFail(
+    SchoolClass,
+    schoolClassId,
+    "Class",
+  );
+
+  const classSubjects = await ClassSubject.find({
+    schoolClass: schoolClass._id,
+  }).select("_id");
+
+  const filter = {
+    classSubject: { $in: classSubjects.map((item) => item._id) },
+    isActive: true,
+  };
+
+  if (query.from || query.to) {
+    filter.date = {};
+    if (query.from) filter.date.$gte = new Date(query.from);
+    if (query.to) {
+      const end = new Date(query.to);
+      end.setHours(23, 59, 59, 999);
+      filter.date.$lte = end;
+    }
+  }
+
+  const records = await Attendance.find(filter).select("student status").lean();
+
+  const countsByStudent = new Map();
+  records.forEach((record) => {
+    const key = record.student.toString();
+    const entry = countsByStudent.get(key) || {
+      total: 0,
+      present: 0,
+      absent: 0,
+      late: 0,
+      excused: 0,
+    };
+
+    entry.total += 1;
+    if (record.status === "Present") entry.present += 1;
+    if (record.status === "Absent") entry.absent += 1;
+    if (record.status === "Late") entry.late += 1;
+    if (record.status === "Excused") entry.excused += 1;
+
+    countsByStudent.set(key, entry);
+  });
+
+  const students = await Student.find({
+    _id: { $in: [...countsByStudent.keys()] },
+  }).populate({
+    path: "user",
+    select: "firstName lastName otherName admissionNumber avatar",
+  });
+
+  return students
+    .map((student) => {
+      const counts = countsByStudent.get(student._id.toString());
+      const effective = counts.present + counts.late;
+
+      return {
+        student,
+        ...counts,
+        attendancePercentage:
+          counts.total > 0
+            ? Number(((effective / counts.total) * 100).toFixed(2))
+            : 0,
+      };
+    })
+    .sort((a, b) => {
+      const nameA =
+        `${a.student.user?.firstName ?? ""} ${a.student.user?.lastName ?? ""}`.trim();
+      const nameB =
+        `${b.student.user?.firstName ?? ""} ${b.student.user?.lastName ?? ""}`.trim();
+      return nameA.localeCompare(nameB);
+    });
+}
