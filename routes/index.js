@@ -23,6 +23,7 @@ import resultRoutes from "./result.routes.js";
 import announcementRoutes from "./announcement.routes.js";
 import dashboardRoutes from "./dashboard.routes.js";
 import promotionRoutes from "./promotion.routes.js";
+import notificationRoutes from "./notification.routes.js";
 
 const router = Router();
 
@@ -56,5 +57,6 @@ router.use("/results", resultRoutes);
 router.use("/announcements", announcementRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/promotions", promotionRoutes);
+router.use("/notifications", notificationRoutes);
 
 export default router;
