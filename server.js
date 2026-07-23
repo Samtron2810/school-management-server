@@ -1,8 +1,6 @@
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
-import mongoSanitize from "express-mongo-sanitize";
-
 import env, { validateRequiredEnv } from "./config/env.js";
 import connectDB from "./config/db.js";
 
@@ -37,8 +35,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(cookieParser());
-app.use(mongoSanitize());
 app.use(sanitizeRequest);
+
+// Root Health Check
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "TronSchool API is running",
+  });
+});
 
 app.set("trust proxy", 1);
 

@@ -34,17 +34,26 @@ const sanitizeValue = (value, keyPath = "") => {
   return value;
 };
 
+const sanitizeObjectInPlace = (obj) => {
+  if (!obj || typeof obj !== "object") return;
+  const sanitized = sanitizeValue(obj);
+  // Clear existing keys
+  Object.keys(obj).forEach((key) => delete obj[key]);
+  // Copy sanitized values back in-place
+  Object.assign(obj, sanitized);
+};
+
 const sanitizeRequest = (req, res, next) => {
   if (req.body && typeof req.body === "object") {
     req.body = sanitizeValue(req.body);
   }
 
   if (req.query && typeof req.query === "object") {
-    req.query = sanitizeValue(req.query);
+    sanitizeObjectInPlace(req.query);
   }
 
   if (req.params && typeof req.params === "object") {
-    req.params = sanitizeValue(req.params);
+    sanitizeObjectInPlace(req.params);
   }
 
   next();
