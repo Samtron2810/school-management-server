@@ -1,4 +1,5 @@
 import xss from "xss";
+import mongoSanitize from "express-mongo-sanitize";
 
 const shouldSkipKey = (keyPath = "") => {
   return /(password|token|secret)$/i.test(keyPath);
@@ -34,27 +35,48 @@ const sanitizeValue = (value, keyPath = "") => {
   return value;
 };
 
-const sanitizeObjectInPlace = (obj) => {
+// Strips Mongo/NoSQL-operator keys (`$gt`, `$where`, dotted paths, etc.)
+// before the value ever reaches a query, then runs the XSS pass above.
+const sanitizeAgainstInjection = (value) => {
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return mongoSanitize.sanitize(sanitizeValue(value));
+};
+
+// req.body/req.params are plain, writable objects on both Express 4 and 5,
+// so mutating them in place is safe and preserves the reference other
+// middleware may have captured.
+const sanitizeInPlace = (obj) => {
   if (!obj || typeof obj !== "object") return;
-  const sanitized = sanitizeValue(obj);
-  // Clear existing keys
+
+  const sanitized = sanitizeAgainstInjection(obj);
+
   Object.keys(obj).forEach((key) => delete obj[key]);
-  // Copy sanitized values back in-place
   Object.assign(obj, sanitized);
 };
 
 const sanitizeRequest = (req, res, next) => {
   if (req.body && typeof req.body === "object") {
-    req.body = sanitizeValue(req.body);
+    req.body = sanitizeAgainstInjection(req.body);
   }
 
+  // IMPORTANT: in Express 5, `req.query` is a getter with no setter — it is
+  // re-parsed from `req.url` on every access, so mutating the object
+  // in place (as with body/params) silently has no effect and the
+  // "sanitized" value is discarded. Redefine the property instead so the
+  // sanitized object is what every downstream handler actually reads.
   if (req.query && typeof req.query === "object") {
-    sanitizeObjectInPlace(req.query);
+    Object.defineProperty(req, "query", {
+      value: sanitizeAgainstInjection(req.query),
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
   }
 
-  if (req.params && typeof req.params === "object") {
-    sanitizeObjectInPlace(req.params);
-  }
+  sanitizeInPlace(req.params);
 
   next();
 };

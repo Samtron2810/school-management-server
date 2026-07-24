@@ -2,41 +2,23 @@ import { Router } from "express";
 
 import studentController from "../controllers/student.controller.js";
 
-import { protect, authorize } from "../middlewares/auth.middleware.js";
-import validate from "../middlewares/validation.middleware.js";
+import authenticate from "../middlewares/authenticate.js";
+import authorize from "../middlewares/authorize.js";
+import validateRequest from "../middlewares/validateRequest.js";
 
-import {
-  createStudentValidator,
-  updateStudentValidator,
-} from "../validators/student.validator.js";
+import { createStudentValidator } from "../validators/student.validator.js";
 
 const router = Router();
 
 router.post(
   "/",
-  protect,
+  authenticate,
   authorize("admin"),
   createStudentValidator,
-  validate,
+  validateRequest,
   studentController.createStudent,
 );
 
-router.get("/", protect, authorize("admin"), studentController.getStudents);
-
-router.get(
-  "/:id",
-  protect,
-  authorize("admin"),
-  studentController.getStudent,
-);
-
-router.patch(
-  "/:id",
-  protect,
-  authorize("admin"),
-  updateStudentValidator,
-  validate,
-  studentController.updateStudent,
-);
+router.get("/", authenticate, authorize("admin"), studentController.getStudents);
 
 export default router;

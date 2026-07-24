@@ -493,7 +493,10 @@ const getAssessment = async (assessmentId) => {
   return await Assessment.findById(assessmentId)
     .populate("teacher")
     .populate("teacherAssignment")
-    .populate("classSubject")
+    .populate({
+      path: "classSubject",
+      populate: [{ path: "subject" }, { path: "schoolClass" }],
+    })
     .populate("session")
     .populate("term");
 };
@@ -511,7 +514,10 @@ const getAssessments = async (filter = {}) => {
   })
     .populate("teacher")
     .populate("teacherAssignment")
-    .populate("classSubject")
+    .populate({
+      path: "classSubject",
+      populate: [{ path: "subject" }, { path: "schoolClass" }],
+    })
     .populate("session")
     .populate("term")
     .sort({

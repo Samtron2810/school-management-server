@@ -2,10 +2,11 @@ import { Router } from "express";
 
 import lessonController from "../controllers/lesson.controller.js";
 
-import { protect, authorize } from "../middlewares/auth.middleware.js";
+import authenticate from "../middlewares/authenticate.js";
+import authorize from "../middlewares/authorize.js";
 
 import upload from "../middlewares/upload.middleware.js";
-import validate from "../middlewares/validation.middleware.js";
+import validateRequest from "../middlewares/validateRequest.js";
 
 import {
   createLessonValidator,
@@ -14,35 +15,35 @@ import {
 
 const router = Router();
 
-router.get("/my", protect, lessonController.getMyLessons);
+router.get("/my", authenticate, lessonController.getMyLessons);
 
-router.get("/", protect, authorize("admin"), lessonController.getLessons);
+router.get("/", authenticate, authorize("admin"), lessonController.getLessons);
 
-router.get("/:id", protect, lessonController.getLessonById);
+router.get("/:id", authenticate, lessonController.getLessonById);
 
 router.post(
   "/",
-  protect,
+  authenticate,
   authorize("admin", "teacher"),
   upload.array("files", 10),
   createLessonValidator,
-  validate,
+  validateRequest,
   lessonController.createLesson,
 );
 
 router.patch(
   "/:id",
-  protect,
+  authenticate,
   authorize("admin", "teacher"),
   upload.array("files", 10),
   updateLessonValidator,
-  validate,
+  validateRequest,
   lessonController.updateLesson,
 );
 
 router.delete(
   "/:id",
-  protect,
+  authenticate,
   authorize("admin", "teacher"),
   lessonController.deleteLesson,
 );

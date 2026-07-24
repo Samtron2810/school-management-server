@@ -304,7 +304,10 @@ const escapeRegex = (value) => {
 const getQuestionById = async (questionId) => {
   return await Question.findById(questionId)
     .populate("teacher")
-    .populate("classSubject")
+    .populate({
+      path: "classSubject",
+      populate: [{ path: "subject" }, { path: "schoolClass" }],
+    })
     .populate("session")
     .populate("term");
 };
@@ -379,7 +382,10 @@ const getQuestions = async (filters = {}) => {
   const [questions, total] = await Promise.all([
     Question.find(query)
       .populate("teacher")
-      .populate("classSubject")
+      .populate({
+        path: "classSubject",
+        populate: [{ path: "subject" }, { path: "schoolClass" }],
+      })
       .populate("session")
       .populate("term")
       .sort(sort)

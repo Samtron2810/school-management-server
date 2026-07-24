@@ -1,59 +1,30 @@
 import { Router } from "express";
+
 import classSubjectController from "../controllers/classSubject.controller.js";
-import { protect, authorize } from "../middlewares/auth.middleware.js";
-import validate from "../middlewares/validation.middleware.js";
-import {
-  createClassSubjectValidator,
-  updateClassSubjectValidator,
-} from "../validators/classSubject.validator.js";
+
+import authenticate from "../middlewares/authenticate.js";
+import authorize from "../middlewares/authorize.js";
+
+import validateRequest from "../middlewares/validateRequest.js";
+
+import { createClassSubjectValidator } from "../validators/classSubject.validator.js";
 
 const router = Router();
 
 router.post(
   "/",
-  protect,
+  authenticate,
   authorize("admin"),
   createClassSubjectValidator,
-  validate,
+  validateRequest,
   classSubjectController.createClassSubject,
 );
 
 router.get(
   "/",
-  protect,
+  authenticate,
   authorize("admin"),
   classSubjectController.getClassSubjects,
-);
-
-// Student-scoped: subjects of the student's current class (before /:id).
-router.get(
-  "/my",
-  protect,
-  authorize("student"),
-  classSubjectController.getMyClassSubjects,
-);
-
-router.get(
-  "/:id",
-  protect,
-  authorize("admin"),
-  classSubjectController.getClassSubject,
-);
-
-router.patch(
-  "/:id",
-  protect,
-  authorize("admin"),
-  updateClassSubjectValidator,
-  validate,
-  classSubjectController.updateClassSubject,
-);
-
-router.delete(
-  "/:id",
-  protect,
-  authorize("admin"),
-  classSubjectController.deleteClassSubject,
 );
 
 export default router;

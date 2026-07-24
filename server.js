@@ -1,6 +1,8 @@
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
+import morgan from "morgan";
+import compression from "compression";
 import env, { validateRequiredEnv } from "./config/env.js";
 import connectDB from "./config/db.js";
 
@@ -22,6 +24,12 @@ await connectDB();
 
 // Built-in Middleware
 app.use(helmet());
+app.use(compression());
+
+if (env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
+
 app.use(
   cors({
     origin: env.CLIENT_ORIGINS,

@@ -2,42 +2,24 @@ import { Router } from "express";
 
 import teacherController from "../controllers/teacher.controller.js";
 
-import { protect, authorize } from "../middlewares/auth.middleware.js";
+import authenticate from "../middlewares/authenticate.js";
+import authorize from "../middlewares/authorize.js";
 
-import validate from "../middlewares/validation.middleware.js";
+import validateRequest from "../middlewares/validateRequest.js";
 
-import {
-  createTeacherValidator,
-  updateTeacherValidator,
-} from "../validators/teacher.validator.js";
+import { createTeacherValidator } from "../validators/teacher.validator.js";
 
 const router = Router();
 
 router.post(
   "/",
-  protect,
+  authenticate,
   authorize("admin"),
   createTeacherValidator,
-  validate,
+  validateRequest,
   teacherController.createTeacher,
 );
 
-router.get("/", protect, authorize("admin"), teacherController.getTeachers);
-
-router.get(
-  "/:id",
-  protect,
-  authorize("admin"),
-  teacherController.getTeacher,
-);
-
-router.patch(
-  "/:id",
-  protect,
-  authorize("admin"),
-  updateTeacherValidator,
-  validate,
-  teacherController.updateTeacher,
-);
+router.get("/", authenticate, authorize("admin"), teacherController.getTeachers);
 
 export default router;

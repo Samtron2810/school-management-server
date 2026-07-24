@@ -2,9 +2,10 @@ import { Router } from "express";
 
 import parentStudentController from "../controllers/parentStudent.controller.js";
 
-import { protect, authorize } from "../middlewares/auth.middleware.js";
+import authenticate from "../middlewares/authenticate.js";
+import authorize from "../middlewares/authorize.js";
 
-import validate from "../middlewares/validation.middleware.js";
+import validateRequest from "../middlewares/validateRequest.js";
 
 import { linkParentStudentValidator } from "../validators/parentStudent.validator.js";
 
@@ -12,30 +13,30 @@ const router = Router();
 
 router.post(
   "/",
-  protect,
+  authenticate,
   authorize("admin"),
   linkParentStudentValidator,
-  validate,
+  validateRequest,
   parentStudentController.linkParentStudent,
 );
 
 router.get(
   "/student/:studentId",
-  protect,
+  authenticate,
   authorize("admin"),
   parentStudentController.getParentsOfStudent,
 );
 
 router.get(
   "/parent/:parentId",
-  protect,
+  authenticate,
   authorize("admin"),
   parentStudentController.getChildrenOfParent,
 );
 
 router.patch(
   "/:id/remove",
-  protect,
+  authenticate,
   authorize("admin"),
   parentStudentController.removeParentStudent,
 );

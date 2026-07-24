@@ -65,10 +65,7 @@ export const getAttempt = asyncHandler(async (req, res) => {
 */
 
 export const getAttempts = asyncHandler(async (req, res) => {
-  const attempts = await studentAttemptService.getStudentAttempts(
-    req.query,
-    req.user,
-  );
+  const attempts = await studentAttemptService.getStudentAttempts(req.user);
 
   return res.json({
     success: true,

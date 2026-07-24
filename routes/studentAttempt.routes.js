@@ -33,7 +33,7 @@ router.post(
 router.get(
   "/",
   authenticate,
-  authorize("admin", "teacher", "student"),
+  authorize("student"),
   studentAttemptController.getAttempts,
 );
 

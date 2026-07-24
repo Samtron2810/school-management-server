@@ -4,10 +4,9 @@ import authController from "../controllers/auth.controller.js";
 import {
   loginValidator,
   changePasswordValidator,
-  updateMeValidator,
 } from "../validators/auth.validator.js";
-import validate from "../middlewares/validation.middleware.js";
-import { protect } from "../middlewares/auth.middleware.js";
+import validateRequest from "../middlewares/validateRequest.js";
+import authenticate from "../middlewares/authenticate.js";
 import { csrfProtection } from "../config/csrf.js";
 import {
   loginRateLimiter,
@@ -20,7 +19,7 @@ router.post(
   "/login",
   loginRateLimiter,
   loginValidator,
-  validate,
+  validateRequest,
   authController.login,
 );
 
@@ -32,29 +31,20 @@ router.post("/logout", csrfProtection, authController.logout);
 
 router.post(
   "/logout-all",
-  protect,
+  authenticate,
   csrfProtection,
   authController.logoutAll,
 );
 
-router.get("/me", protect, authController.me);
-
-router.patch(
-  "/me",
-  protect,
-  csrfProtection,
-  updateMeValidator,
-  validate,
-  authController.updateMe,
-);
+router.get("/me", authenticate, authController.me);
 
 router.patch(
   "/change-password",
-  protect,
+  authenticate,
   csrfProtection,
   passwordChangeRateLimiter,
   changePasswordValidator,
-  validate,
+  validateRequest,
   authController.changePassword,
 );
 

@@ -5,8 +5,6 @@ import ClassSubject from "../models/ClassSubject.js";
 import Teacher from "../models/Teacher.js";
 import Student from "../models/Student.js";
 import Enrollment from "../models/Enrollment.js";
-import Parent from "../models/Parent.js";
-import ParentStudent from "../models/ParentStudent.js";
 
 import ApiError from "../utils/ApiError.js";
 import withTransaction from "../utils/withTransaction.js";
@@ -383,85 +381,6 @@ const getMyLessons = async (user) => {
 
     const classSubjects = await ClassSubject.find({
       schoolClass: enrollment.schoolClass,
-      isActive: true,
-    }).select("_id");
-
-    const classSubjectIds = classSubjects.map((item) => item._id);
-
-    return await Lesson.find({
-      classSubject: { $in: classSubjectIds },
-      session: currentSession._id,
-      term: currentTerm._id,
-      isActive: true,
-      isPublished: true,
-    })
-      .populate({
-        path: "teacher",
-        populate: {
-          path: "user",
-          select:
-            "firstName lastName otherName email username phoneNumber avatar role",
-        },
-      })
-      .populate({
-        path: "teacherAssignment",
-        populate: [
-          {
-            path: "subject",
-            select: "name code",
-          },
-          {
-            path: "schoolClass",
-          },
-          {
-            path: "session",
-            select: "name",
-          },
-          {
-            path: "term",
-            select: "name",
-          },
-        ],
-      })
-      .populate({
-        path: "classSubject",
-        populate: [
-          {
-            path: "subject",
-            select: "name code",
-          },
-          {
-            path: "schoolClass",
-          },
-        ],
-      })
-      .sort({
-        createdAt: -1,
-      });
-  }
-
-  if (user.role === "parent") {
-    const parent = await Parent.findOne({
-      user: user._id,
-    });
-
-    if (!parent) {
-      throw new ApiError(403, "Parent profile not found.");
-    }
-
-    const links = await ParentStudent.find({
-      parent: parent._id,
-      isActive: true,
-    }).select("student");
-
-    const enrollments = await Enrollment.find({
-      student: { $in: links.map((link) => link.student) },
-      session: currentSession._id,
-      status: "Active",
-    }).select("schoolClass");
-
-    const classSubjects = await ClassSubject.find({
-      schoolClass: { $in: enrollments.map((item) => item.schoolClass) },
       isActive: true,
     }).select("_id");
 

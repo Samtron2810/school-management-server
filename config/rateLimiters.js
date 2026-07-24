@@ -15,7 +15,7 @@ export const apiRateLimiter = rateLimit({
 const createAuthRateLimiter = (message) =>
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5,
+    max: 10,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === "OPTIONS",

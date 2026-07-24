@@ -19,25 +19,7 @@ const getStudents = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "Students fetched successfully.", students));
 });
 
-const getStudent = asyncHandler(async (req, res) => {
-  const student = await studentService.getStudent(req.params.id);
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, "Student fetched successfully.", student));
-});
-
-const updateStudent = asyncHandler(async (req, res) => {
-  const student = await studentService.updateStudent(req.params.id, req.body);
-
-  return res
-    .status(200)
-    .json(new ApiResponse(200, "Student updated successfully.", student));
-});
-
 export default {
   createStudent,
   getStudents,
-  getStudent,
-  updateStudent,
 };
