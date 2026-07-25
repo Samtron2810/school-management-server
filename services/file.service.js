@@ -1,10 +1,10 @@
-import uploadToCloudinary from "../utils/uploadToCloudinary.js";
+import uploadToCloudinaryWithRetry from "../utils/uploadToCloudinary.js";
 
 const uploadFiles = async (files, folder) => {
   const uploads = [];
 
   for (const file of files) {
-    const uploaded = await uploadToCloudinary(file, folder);
+    const uploaded = await uploadToCloudinaryWithRetry(file, folder);
 
     uploads.push({
       originalName: file.originalname,
