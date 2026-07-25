@@ -2,9 +2,8 @@ import { Router } from "express";
 
 import * as studentAnswerController from "../controllers/studentAnswer.controller.js";
 
-import authenticate from "../middlewares/authenticate.js";
-import authorize from "../middlewares/authorize.js";
-import validateRequest from "../middlewares/validateRequest.js";
+import { protect, authorize } from "../middlewares/auth.middleware.js";
+import validate from "../middlewares/validation.middleware.js";
 
 import {
   saveAnswerValidator,
@@ -22,10 +21,10 @@ const router = Router();
 
 router.post(
   "/",
-  authenticate,
+  protect,
   authorize("student"),
   saveAnswerValidator,
-  validateRequest,
+  validate,
   studentAnswerController.saveAnswer,
 );
 
@@ -37,10 +36,10 @@ router.post(
 
 router.get(
   "/attempts/:attemptId",
-  authenticate,
+  protect,
   authorize("student"),
   attemptIdValidatorArray,
-  validateRequest,
+  validate,
   studentAnswerController.getAnswers,
 );
 
@@ -52,10 +51,10 @@ router.get(
 
 router.get(
   "/attempts/:attemptId/review",
-  authenticate,
+  protect,
   authorize("student"),
   attemptIdValidatorArray,
-  validateRequest,
+  validate,
   studentAnswerController.reviewAnswers,
 );
 
@@ -67,19 +66,19 @@ router.get(
 
 router.get(
   "/attempts/:attemptId/questions/:questionId",
-  authenticate,
+  protect,
   authorize("student"),
   questionAttemptValidator,
-  validateRequest,
+  validate,
   studentAnswerController.getAnswer,
 );
 
 router.delete(
   "/attempts/:attemptId/questions/:questionId",
-  authenticate,
+  protect,
   authorize("student"),
   questionAttemptValidator,
-  validateRequest,
+  validate,
   studentAnswerController.clearAnswer,
 );
 

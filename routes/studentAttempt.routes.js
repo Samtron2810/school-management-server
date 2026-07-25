@@ -2,9 +2,8 @@ import { Router } from "express";
 
 import * as studentAttemptController from "../controllers/studentAttempt.controller.js";
 
-import authenticate from "../middlewares/authenticate.js";
-import authorize from "../middlewares/authorize.js";
-import validateRequest from "../middlewares/validateRequest.js";
+import { protect, authorize } from "../middlewares/auth.middleware.js";
+import validate from "../middlewares/validation.middleware.js";
 
 import {
   startAssessmentValidator,
@@ -23,35 +22,35 @@ const router = Router();
 
 router.post(
   "/",
-  authenticate,
+  protect,
   authorize("student"),
   startAssessmentValidator,
-  validateRequest,
+  validate,
   studentAttemptController.startAssessment,
 );
 
 router.get(
   "/",
-  authenticate,
+  protect,
   authorize("admin", "teacher", "student"),
   studentAttemptController.getAttempts,
 );
 
 router.get(
   "/:id",
-  authenticate,
+  protect,
   authorize("student"),
   getAttemptValidator,
-  validateRequest,
+  validate,
   studentAttemptController.getAttempt,
 );
 
 router.patch(
   "/:id/submit",
-  authenticate,
+  protect,
   authorize("student"),
   submitAssessmentValidator,
-  validateRequest,
+  validate,
   studentAttemptController.submitAssessment,
 );
 
@@ -63,19 +62,19 @@ router.patch(
 
 router.patch(
   "/:id/auto-submit",
-  authenticate,
+  protect,
   authorize("admin"),
   autoSubmitValidator,
-  validateRequest,
+  validate,
   studentAttemptController.autoSubmit,
 );
 
 router.get(
   "/:id/questions",
-  authenticate,
+  protect,
   authorize("student"),
   getAttemptValidator,
-  validateRequest,
+  validate,
   studentAttemptController.getAttemptQuestions,
 );
 

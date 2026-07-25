@@ -2,52 +2,51 @@ import { Router } from "express";
 
 import resultController from "../controllers/result.controller.js";
 
-import authenticate from "../middlewares/authenticate.js";
-import authorize from "../middlewares/authorize.js";
+import { protect, authorize } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.get("/", authenticate, resultController.getResults);
+router.get("/", protect, resultController.getResults);
 // Bulk: every student in a class (admins/teachers).
 router.get(
   "/report-cards",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   resultController.generateClassReportCards,
 );
 router.get(
   "/report-card/:studentId",
-  authenticate,
+  protect,
   resultController.generateReportCard,
 );
-router.get("/:id", authenticate, resultController.getResultById);
+router.get("/:id", protect, resultController.getResultById);
 router.post(
   "/",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   resultController.createResult,
 );
 router.post(
   "/attempts/:attemptId",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   resultController.createResultFromAttempt,
 );
 router.post(
   "/compute-grade",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   resultController.computeGrade,
 );
 router.patch(
   "/:id",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   resultController.updateResult,
 );
 router.delete(
   "/:id",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   resultController.deleteResult,
 );

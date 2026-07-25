@@ -2,9 +2,8 @@ import { Router } from "express";
 
 import * as assessmentController from "../controllers/assessment.controller.js";
 
-import authenticate from "../middlewares/authenticate.js";
-import authorize from "../middlewares/authorize.js";
-import validateRequest from "../middlewares/validateRequest.js";
+import { protect, authorize } from "../middlewares/auth.middleware.js";
+import validate from "../middlewares/validation.middleware.js";
 
 import {
   createAssessmentValidator,
@@ -24,45 +23,45 @@ const router = Router();
 
 router.post(
   "/",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   createAssessmentValidator,
-  validateRequest,
+  validate,
   assessmentController.createAssessment,
 );
 
-router.get("/", authenticate, assessmentController.getAssessments);
+router.get("/", protect, assessmentController.getAssessments);
 
 router.get(
   "/available",
-  authenticate,
+  protect,
   authorize("student"),
   assessmentController.getAvailableAssessments,
 );
 
 router.get(
   "/:id",
-  authenticate,
+  protect,
   assessmentIdParamValidator,
-  validateRequest,
+  validate,
   assessmentController.getAssessment,
 );
 
 router.patch(
   "/:id",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   updateAssessmentValidator,
-  validateRequest,
+  validate,
   assessmentController.updateAssessment,
 );
 
 router.delete(
   "/:id",
-  authenticate,
+  protect,
   authorize("admin"),
   assessmentIdParamValidator,
-  validateRequest,
+  validate,
   assessmentController.deleteAssessment,
 );
 
@@ -74,19 +73,19 @@ router.delete(
 
 router.patch(
   "/:id/publish",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   assessmentIdParamValidator,
-  validateRequest,
+  validate,
   assessmentController.publishAssessment,
 );
 
 router.patch(
   "/:id/unpublish",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   assessmentIdParamValidator,
-  validateRequest,
+  validate,
   assessmentController.unpublishAssessment,
 );
 
@@ -98,19 +97,19 @@ router.patch(
 
 router.post(
   "/:id/questions",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   addQuestionsValidator,
-  validateRequest,
+  validate,
   assessmentController.addQuestionsToAssessment,
 );
 
 router.delete(
   "/:id/questions",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   removeQuestionsValidator,
-  validateRequest,
+  validate,
   assessmentController.removeQuestionsFromAssessment,
 );
 

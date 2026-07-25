@@ -2,21 +2,20 @@ import { Router } from "express";
 
 import promotionController from "../controllers/promotion.controller.js";
 
-import authenticate from "../middlewares/authenticate.js";
-import authorize from "../middlewares/authorize.js";
+import { protect, authorize } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.get("/", authenticate, authorize("admin"), promotionController.getPromotions);
+router.get("/", protect, authorize("admin"), promotionController.getPromotions);
 router.get(
   "/:id",
-  authenticate,
+  protect,
   authorize("admin"),
   promotionController.getPromotionById,
 );
 router.post(
   "/",
-  authenticate,
+  protect,
   authorize("admin"),
   promotionController.promoteStudents,
 );

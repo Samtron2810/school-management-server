@@ -2,10 +2,10 @@ import { Router } from "express";
 
 import dashboardController from "../controllers/dashboard.controller.js";
 
-import authenticate from "../middlewares/authenticate.js";
+import { protect } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-router.get("/", authenticate, dashboardController.getDashboard);
+router.get("/", protect, dashboardController.getDashboard);
 
 export default router;

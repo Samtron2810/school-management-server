@@ -1,6 +1,7 @@
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
+import morgan from "morgan";
 import env, { validateRequiredEnv } from "./config/env.js";
 import connectDB from "./config/db.js";
 
@@ -22,6 +23,13 @@ await connectDB();
 
 // Built-in Middleware
 app.use(helmet());
+
+// HTTP request logging — dev only, to avoid noisy/duplicate logs in production
+// (most hosts already log requests at the platform level).
+if (env.NODE_ENV !== "production") {
+  app.use(morgan("dev"));
+}
+
 app.use(
   cors({
     origin: env.CLIENT_ORIGINS,

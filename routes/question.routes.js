@@ -2,9 +2,8 @@ import { Router } from "express";
 
 import * as questionController from "../controllers/question.controller.js";
 
-import authenticate from "../middlewares/authenticate.js";
-import authorize from "../middlewares/authorize.js";
-import validateRequest from "../middlewares/validateRequest.js";
+import { protect, authorize } from "../middlewares/auth.middleware.js";
+import validate from "../middlewares/validation.middleware.js";
 
 import {
   createQuestionValidator,
@@ -24,18 +23,18 @@ const router = Router();
 
 router.post(
   "/",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   createQuestionValidator,
-  validateRequest,
+  validate,
   questionController.createQuestion,
 );
 
 router.get(
   "/",
-  authenticate,
+  protect,
   getQuestionsValidator,
-  validateRequest,
+  validate,
   questionController.getQuestions,
 );
 
@@ -47,10 +46,10 @@ router.get(
 
 router.delete(
   "/",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   deleteQuestionsValidator,
-  validateRequest,
+  validate,
   questionController.deleteQuestions,
 );
 
@@ -62,10 +61,10 @@ router.delete(
 
 router.post(
   "/:id/duplicate",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   questionIdParamValidator,
-  validateRequest,
+  validate,
   questionController.duplicateQuestion,
 );
 
@@ -77,27 +76,27 @@ router.post(
 
 router.get(
   "/:id",
-  authenticate,
+  protect,
   questionIdParamValidator,
-  validateRequest,
+  validate,
   questionController.getQuestion,
 );
 
 router.patch(
   "/:id",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   updateQuestionValidator,
-  validateRequest,
+  validate,
   questionController.updateQuestion,
 );
 
 router.delete(
   "/:id",
-  authenticate,
+  protect,
   authorize("admin", "teacher"),
   questionIdParamValidator,
-  validateRequest,
+  validate,
   questionController.deleteQuestion,
 );
 
