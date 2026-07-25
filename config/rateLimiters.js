@@ -5,7 +5,7 @@ export const apiRateLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method === "OPTIONS",
+  skip: (req) => req.method === "OPTIONS" || req.method === "GET",
   message: {
     success: false,
     message: "Too many requests, please try again later.",
@@ -18,7 +18,7 @@ const createAuthRateLimiter = (message) =>
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.method === "OPTIONS",
+    skip: (req) => req.method === "OPTIONS" || req.method === "GET",
     message: {
       success: false,
       message,

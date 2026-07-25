@@ -520,7 +520,7 @@ const getAttemptQuestions = async (attemptId, user) => {
       order: 1,
     });
 
-  const questions = assessmentQuestions.map((item) => ({
+  let questions = assessmentQuestions.map((item) => ({
     id: item.question._id,
 
     assessmentQuestion: item._id,
