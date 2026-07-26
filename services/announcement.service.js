@@ -65,7 +65,7 @@ const buildAudience = (data) => {
   };
 };
 
-const isVisibleToUser = async (announcement, user) => {
+const isVisibleToUser = async (announcement, user, academicContext) => {
   const now = new Date();
 
   if (!announcement.isActive) {
@@ -105,7 +105,14 @@ const isVisibleToUser = async (announcement, user) => {
   }
 
   if (announcement.targetClasses.length > 0) {
-    const { session, term } = await getCurrentAcademicContext();
+    // No resolvable current session/term (e.g. between academic sessions) —
+    // a class-targeted announcement can't be matched to anyone's enrollment,
+    // so treat it as not-visible instead of failing the whole request.
+    if (!academicContext) {
+      return false;
+    }
+
+    const { session, term } = academicContext;
 
     if (user.role === "student") {
       const student = await getStudentProfile(user._id);
@@ -219,7 +226,9 @@ const getAnnouncementById = async (announcementId, user) => {
     "Announcement",
   );
 
-  const visible = await isVisibleToUser(announcement, user);
+  const academicContext = await getCurrentAcademicContext().catch(() => null);
+
+  const visible = await isVisibleToUser(announcement, user, academicContext);
 
   if (!visible) {
     throw new ApiError(403, "You are not allowed to view this announcement.");
@@ -239,10 +248,14 @@ const getAnnouncements = async (user) => {
     })
     .lean();
 
+  // Resolved once per request, not once per announcement — also means one
+  // missing/ambiguous academic context can no longer fail the whole list.
+  const academicContext = await getCurrentAcademicContext().catch(() => null);
+
   const visibleAnnouncements = [];
 
   for (const announcement of announcements) {
-    if (await isVisibleToUser(announcement, user)) {
+    if (await isVisibleToUser(announcement, user, academicContext)) {
       visibleAnnouncements.push(announcement);
     }
   }

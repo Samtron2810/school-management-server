@@ -25,6 +25,17 @@ const createSession = async (data) => {
 
   const session = await Session.create(data);
 
+  // A term left `isCurrent: true` under a now-inactive session would
+  // otherwise resurface as "current" the moment that old session is
+  // reactivated. Terms are session-scoped, so clear them all here —
+  // the new session starts with no current term until one is explicitly set.
+  if (data.isCurrent) {
+    await Term.updateMany(
+      { session: { $ne: session._id } },
+      { isCurrent: false },
+    );
+  }
+
   return session;
 };
 
@@ -56,6 +67,13 @@ const updateSession = async (sessionId, data) => {
   if (data.isCurrent === true) {
     await Session.updateMany(
       { _id: { $ne: session._id } },
+      { isCurrent: false },
+    );
+
+    // Same reasoning as createSession: clear isCurrent on every term
+    // outside this session so none can resurface as "current" later.
+    await Term.updateMany(
+      { session: { $ne: session._id } },
       { isCurrent: false },
     );
   }

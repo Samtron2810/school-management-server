@@ -302,6 +302,17 @@ const deleteResult = async (resultId, user) => {
   return result;
 };
 
+// result.student / result.teacher may be a raw ObjectId OR a populated
+// document depending on the caller (getResults populates before filtering).
+// A populated Mongoose document's .toString() returns a full field dump,
+// not its _id — so callers must normalize through this before comparing,
+// or the comparison silently fails 100% of the time for populated results.
+const extractId = (value) => {
+  if (!value) return null;
+  if (typeof value === "object" && value._id) return value._id.toString();
+  return value.toString();
+};
+
 const canAccessResult = async (result, user) => {
   if (user.role === "admin") {
     return true;
@@ -310,15 +321,15 @@ const canAccessResult = async (result, user) => {
   if (user.role === "student") {
     const student = await getStudentProfile(user._id);
 
-    return result.student.toString() === student._id.toString();
+    return extractId(result.student) === student._id.toString();
   }
 
   if (user.role === "teacher") {
     const teacher = await getTeacherProfile(user._id);
 
     return (
-      result.teacher &&
-      result.teacher.toString() === teacher._id.toString()
+      Boolean(result.teacher) &&
+      extractId(result.teacher) === teacher._id.toString()
     );
   }
 
@@ -327,7 +338,7 @@ const canAccessResult = async (result, user) => {
 
     const relation = await ParentStudent.findOne({
       parent: parent._id,
-      student: result.student,
+      student: extractId(result.student),
       isActive: true,
     });
 

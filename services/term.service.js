@@ -24,10 +24,11 @@ const createTerm = async (data) => {
   }
 
   if (data.isCurrent) {
+    // Global, not session-scoped: only one term may be current at a time,
+    // system-wide — otherwise a term left over from another session can
+    // coexist as "current" alongside this one.
     await Term.updateMany(
-      {
-        session: currentSession._id,
-      },
+      {},
       {
         isCurrent: false,
       },
@@ -67,10 +68,10 @@ const updateTerm = async (termId, data) => {
     }
   }
 
-  // Only one term per session may be current at a time.
+  // Only one term may be current at a time, system-wide.
   if (data.isCurrent === true) {
     await Term.updateMany(
-      { session: term.session, _id: { $ne: term._id } },
+      { _id: { $ne: term._id } },
       { isCurrent: false },
     );
   }
