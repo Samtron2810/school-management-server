@@ -9,6 +9,19 @@ const createEnrollment = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, "Student enrolled successfully.", enrollment));
 });
 
+const bulkCreateEnrollments = asyncHandler(async (req, res) => {
+  const enrollments = await enrollmentService.bulkCreateEnrollments(req.body);
+  return res
+    .status(201)
+    .json(
+      new ApiResponse(
+        201,
+        `${enrollments.length} student(s) enrolled successfully.`,
+        enrollments,
+      ),
+    );
+});
+
 const getEnrollments = asyncHandler(async (req, res) => {
   const enrollments = await enrollmentService.getEnrollments();
   return res
@@ -44,6 +57,7 @@ const deleteEnrollment = asyncHandler(async (req, res) => {
 
 export default {
   createEnrollment,
+  bulkCreateEnrollments,
   getEnrollments,
   getEnrollment,
   updateEnrollment,

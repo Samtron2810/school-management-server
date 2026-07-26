@@ -41,8 +41,19 @@ const createTerm = async (data) => {
   });
 };
 
-const getTerms = async () => {
-  return await Term.find().populate("session", "name").sort({
+// No filters: all terms. `activeOnly`: only terms under the active session.
+// `session`: only terms under that specific session id.
+const getTerms = async (query = {}) => {
+  const filter = {};
+
+  if (query.session) {
+    filter.session = query.session;
+  } else if (query.activeOnly) {
+    const currentSession = await Session.findOne({ isCurrent: true });
+    filter.session = currentSession ? currentSession._id : null;
+  }
+
+  return await Term.find(filter).populate("session", "name").sort({
     createdAt: -1,
   });
 };
@@ -70,6 +81,15 @@ const updateTerm = async (termId, data) => {
 
   // Only one term may be current at a time, system-wide.
   if (data.isCurrent === true) {
+    const session = await Session.findById(term.session);
+
+    if (!session || !session.isCurrent) {
+      throw new ApiError(
+        400,
+        "Cannot activate this term because its session is not the active session. Activate the session first.",
+      );
+    }
+
     await Term.updateMany(
       { _id: { $ne: term._id } },
       { isCurrent: false },

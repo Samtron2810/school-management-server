@@ -6,6 +6,16 @@ export const createEnrollmentValidator = [
   body("schoolClass").notEmpty().withMessage("Class is required"),
 ];
 
+export const bulkCreateEnrollmentValidator = [
+  body("students")
+    .isArray({ min: 1 })
+    .withMessage("At least one student is required"),
+
+  body("students.*").isMongoId().withMessage("Invalid student ID"),
+
+  body("schoolClass").notEmpty().withMessage("Class is required"),
+];
+
 export const updateEnrollmentValidator = [
   param("id").isMongoId().withMessage("Invalid enrollment ID"),
 

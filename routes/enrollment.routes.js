@@ -4,6 +4,7 @@ import { protect, authorize } from "../middlewares/auth.middleware.js";
 import validate from "../middlewares/validation.middleware.js";
 import {
   createEnrollmentValidator,
+  bulkCreateEnrollmentValidator,
   updateEnrollmentValidator,
 } from "../validators/enrollment.validator.js";
 
@@ -16,6 +17,16 @@ router.post(
   createEnrollmentValidator,
   validate,
   enrollmentController.createEnrollment,
+);
+
+// Bulk-enroll many students into one class at once (all-or-nothing).
+router.post(
+  "/bulk",
+  protect,
+  authorize("admin"),
+  bulkCreateEnrollmentValidator,
+  validate,
+  enrollmentController.bulkCreateEnrollments,
 );
 
 router.get(

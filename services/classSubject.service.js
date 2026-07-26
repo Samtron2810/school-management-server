@@ -8,6 +8,7 @@ import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import Student from "../models/Student.js";
 import Enrollment from "../models/Enrollment.js";
+import withTransaction from "../utils/withTransaction.js";
 
 const createClassSubject = async (data) => {
   const schoolClass = await SchoolClass.findById(data.schoolClass);
@@ -33,6 +34,61 @@ const createClassSubject = async (data) => {
     schoolClass: schoolClass._id,
     subject: subject._id,
     isCompulsory: data.isCompulsory,
+  });
+};
+
+// Link many subjects to one class at once. All-or-nothing: if any subject
+// fails (not found, already linked, etc.) the whole batch aborts.
+const bulkCreateClassSubjects = async (data) => {
+  const subjectIds = Array.isArray(data.subjects) ? data.subjects : [];
+
+  if (subjectIds.length === 0) {
+    throw new ApiError(400, "At least one subject is required.");
+  }
+
+  return await withTransaction(async (session) => {
+    const schoolClass = await SchoolClass.findById(data.schoolClass).session(
+      session,
+    );
+    if (!schoolClass) {
+      throw new ApiError(404, "Class not found.");
+    }
+
+    const created = [];
+
+    for (const subjectId of subjectIds) {
+      const subject = await Subject.findById(subjectId).session(session);
+      if (!subject) {
+        throw new ApiError(404, `Subject not found: ${subjectId}`);
+      }
+
+      const existing = await ClassSubject.findOne({
+        schoolClass: schoolClass._id,
+        subject: subject._id,
+      }).session(session);
+
+      if (existing) {
+        throw new ApiError(
+          400,
+          `${subject.name} is already assigned to this class.`,
+        );
+      }
+
+      const [classSubject] = await ClassSubject.create(
+        [
+          {
+            schoolClass: schoolClass._id,
+            subject: subject._id,
+            isCompulsory: data.isCompulsory,
+          },
+        ],
+        { session },
+      );
+
+      created.push(classSubject);
+    }
+
+    return created;
   });
 };
 
@@ -150,6 +206,7 @@ const getMyClassSubjects = async (user) => {
 
 export default {
   createClassSubject,
+  bulkCreateClassSubjects,
   getClassSubjects,
   getClassSubject,
   updateClassSubject,

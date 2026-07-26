@@ -4,6 +4,7 @@ import { protect, authorize } from "../middlewares/auth.middleware.js";
 import validate from "../middlewares/validation.middleware.js";
 import {
   createClassSubjectValidator,
+  bulkCreateClassSubjectValidator,
   updateClassSubjectValidator,
 } from "../validators/classSubject.validator.js";
 
@@ -16,6 +17,16 @@ router.post(
   createClassSubjectValidator,
   validate,
   classSubjectController.createClassSubject,
+);
+
+// Bulk-link many subjects to one class at once (all-or-nothing).
+router.post(
+  "/bulk",
+  protect,
+  authorize("admin"),
+  bulkCreateClassSubjectValidator,
+  validate,
+  classSubjectController.bulkCreateClassSubjects,
 );
 
 router.get(

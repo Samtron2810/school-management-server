@@ -21,6 +21,7 @@
   },
   "type": "module",
   "dependencies": {
+    "archiver": "^8.0.0",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.10.0",
     "compression": "^1.8.1",
@@ -38,6 +39,7 @@
     "morgan": "^1.11.0",
     "multer": "^2.2.0",
     "multer-storage-cloudinary": "^4.0.0",
+    "pdfkit": "^0.19.1",
     "xss": "^1.0.15"
   }
 }

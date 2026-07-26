@@ -15,6 +15,21 @@ const createClassSubject = asyncHandler(async (req, res) => {
     );
 });
 
+const bulkCreateClassSubjects = asyncHandler(async (req, res) => {
+  const classSubjects = await classSubjectService.bulkCreateClassSubjects(
+    req.body,
+  );
+  return res
+    .status(201)
+    .json(
+      new ApiResponse(
+        201,
+        `${classSubjects.length} subject(s) linked successfully.`,
+        classSubjects,
+      ),
+    );
+});
+
 const getClassSubjects = asyncHandler(async (req, res) => {
   const classSubjects = await classSubjectService.getClassSubjects();
   return res
@@ -79,6 +94,7 @@ const deleteClassSubject = asyncHandler(async (req, res) => {
 
 export default {
   createClassSubject,
+  bulkCreateClassSubjects,
   getClassSubjects,
   getClassSubject,
   updateClassSubject,

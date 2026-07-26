@@ -10,7 +10,7 @@ const createTerm = asyncHandler(async (req, res) => {
 });
 
 const getTerms = asyncHandler(async (req, res) => {
-  const terms = await termService.getTerms();
+  const terms = await termService.getTerms(req.query);
   return res
     .status(200)
     .json(new ApiResponse(200, "Terms fetched successfully.", terms));
