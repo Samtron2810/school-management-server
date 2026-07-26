@@ -12,6 +12,9 @@ import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import Teacher from "../models/Teacher.js";
 
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import subjectScoreService, {
+  ASSESSMENT_TYPE_TO_COMPONENT_KEY,
+} from "./subjectScore.service.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -323,6 +326,32 @@ const finalizeAttempt = async (attempt, status) => {
   attempt.gradingVersion = 1;
 
   await attempt.save();
+
+  // Prefill the matching mark-entry column (quiz/assignment/test/exam) on
+  // the student's SubjectScore for this class+subject+term. "Latest
+  // attempt wins" — this simply overwrites whatever was there before.
+  // Failures here must never block the student's submission, so they're
+  // swallowed and logged instead of thrown.
+  try {
+    const componentKey = ASSESSMENT_TYPE_TO_COMPONENT_KEY[assessment.type];
+    if (componentKey && assessment.classSubject) {
+      await subjectScoreService.applyAttemptScore({
+        student: attempt.student,
+        classSubject: assessment.classSubject,
+        session: assessment.session,
+        term: assessment.term,
+        componentKey,
+        score: result.score,
+        assessmentTotalMarks: assessment.totalMarks,
+        attemptId: attempt._id,
+      });
+    }
+  } catch (error) {
+    console.error(
+      `Failed to prefill SubjectScore from attempt ${attempt._id}:`,
+      error?.message || error,
+    );
+  }
 
   return attempt;
 };

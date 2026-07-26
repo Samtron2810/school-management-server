@@ -60,6 +60,13 @@ router.patch(
   classSubjectController.updateClassSubject,
 );
 
+router.patch(
+  "/:id/score-components",
+  protect,
+  authorize("admin"),
+  classSubjectController.updateScoreComponents,
+);
+
 router.delete(
   "/:id",
   protect,

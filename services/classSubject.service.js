@@ -147,6 +147,48 @@ const updateClassSubject = async (classSubjectId, data) => {
     .populate("subject");
 };
 
+// Update the mark-entry column config (key/label/maxMarks/isActive) for a
+// class+subject. Replaces the whole array — the frontend always sends the
+// full set back after editing. Existing SubjectScore.scores keys that are
+// no longer present just stop being read; nothing is deleted.
+const updateScoreComponents = async (classSubjectId, components) => {
+  const classSubject = await findDocumentOrFail(
+    ClassSubject,
+    classSubjectId,
+    "ClassSubject",
+  );
+
+  if (!Array.isArray(components) || components.length === 0) {
+    throw new ApiError(400, "At least one score component is required.");
+  }
+
+  const seenKeys = new Set();
+  for (const component of components) {
+    if (!component.key || !component.label) {
+      throw new ApiError(400, "Each score component needs a key and label.");
+    }
+    const key = component.key.trim().toLowerCase();
+    if (seenKeys.has(key)) {
+      throw new ApiError(400, `Duplicate score component key: ${key}`);
+    }
+    seenKeys.add(key);
+    if (Number(component.maxMarks) < 0 || component.maxMarks === undefined) {
+      throw new ApiError(400, `Invalid max marks for "${component.label}".`);
+    }
+  }
+
+  classSubject.scoreComponents = components.map((component) => ({
+    key: component.key.trim().toLowerCase(),
+    label: component.label.trim(),
+    maxMarks: Number(component.maxMarks),
+    isActive: component.isActive !== false,
+  }));
+
+  await classSubject.save();
+
+  return classSubject;
+};
+
 const deleteClassSubject = async (classSubjectId) => {
   const classSubject = await findDocumentOrFail(
     ClassSubject,
@@ -210,6 +252,7 @@ export default {
   getClassSubjects,
   getClassSubject,
   updateClassSubject,
+  updateScoreComponents,
   deleteClassSubject,
   getMyClassSubjects,
 };
