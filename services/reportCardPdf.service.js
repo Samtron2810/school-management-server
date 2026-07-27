@@ -1,86 +1,239 @@
 import PDFDocument from "pdfkit";
-import * as archiver from "archiver";
+import { createRequire } from "module";
 import reportCardService from "./reportCard.service.js";
 import ApiError from "../utils/ApiError.js";
+
+// archiver ships as CommonJS; Node's strict ESM loader can't always
+// synthesize a default export for it depending on the installed version,
+// so it's pulled in via createRequire instead of a plain default import.
+const require = createRequire(import.meta.url);
+const archiver = require("archiver");
 
 // Draws report card content onto an already-created PDFDocument. Caller is
 // responsible for creating the doc, piping/collecting its output, and
 // calling doc.end() when done.
+//
+// IMPORTANT: every piece of text below is placed with an explicit (x, y)
+// and we track `y` ourselves in a local variable. PDFKit's own auto-flow
+// cursor (doc.y) is unreliable once you've called text() with explicit
+// coordinates — mixing explicit positioning with moveDown()/auto-flow text
+// is what caused the previous scattered/overlapping layout. Keeping one
+// manual cursor for the whole page avoids that entirely.
 const drawReportCard = (doc, card) => {
   const studentName =
     card.student?.user?.fullName || card.student?.admissionNumber || "Student";
   const className = card.enrollment?.schoolClass?.fullName || "—";
 
-  doc.fontSize(18).text("Student Report Card", { align: "center" });
-  doc.moveDown(0.5);
-  doc
-    .fontSize(11)
-    .text(`${card.session?.name || ""} — ${card.term?.name || ""}`, {
-      align: "center",
-    });
-  doc.moveDown(1);
+  const pageLeft = doc.page.margins.left;
+  const pageRight = doc.page.width - doc.page.margins.right;
+  const contentWidth = pageRight - pageLeft;
+  const lineHeight = 16;
+  const bottomLimit = doc.page.height - doc.page.margins.bottom;
 
-  doc.fontSize(12).text(`Name: ${studentName}`);
-  doc.text(`Admission No: ${card.student?.admissionNumber || "—"}`);
-  doc.text(`Class: ${className}`);
-  doc.moveDown(1);
+  let y = doc.page.margins.top;
 
-  // Subject score table.
-  const tableTop = doc.y;
-  const columns = [
-    { label: "Subject", width: 150 },
-    { label: "Score", width: 70 },
-    { label: "Max", width: 60 },
-    { label: "%", width: 60 },
-    { label: "Grade", width: 60 },
-    { label: "Remark", width: 110 },
-  ];
-
-  let x = doc.x;
-  let y = tableTop;
-  doc.fontSize(10).font("Helvetica-Bold");
-  columns.forEach((col) => {
-    doc.text(col.label, x, y, { width: col.width });
-    x += col.width;
-  });
-  doc.moveDown(0.5);
-  doc.font("Helvetica");
-
-  y = doc.y;
-  for (const row of card.subjects || []) {
-    x = doc.x;
-    const subjectName = row.classSubject?.subject?.name || "—";
-    const cells = [
-      subjectName,
-      String(row.total ?? "—"),
-      String(row.totalMaxMarks ?? "—"),
-      `${row.percentage ?? 0}%`,
-      row.grade || "—",
-      row.remark || "—",
-    ];
-    cells.forEach((text, i) => {
-      doc.text(text, x, y, { width: columns[i].width });
-      x += columns[i].width;
-    });
-    y += 18;
-    if (y > doc.page.height - 100) {
+  const ensureSpace = (needed) => {
+    if (y + needed > bottomLimit) {
       doc.addPage();
-      y = doc.y;
+      y = doc.page.margins.top;
+    }
+  };
+
+  const writeLine = (text, options = {}) => {
+    const {
+      fontSize = 11,
+      bold = false,
+      align = "left",
+      gapAfter = lineHeight,
+    } = options;
+    ensureSpace(gapAfter);
+    doc
+      .font(bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(fontSize)
+      .text(text, pageLeft, y, { width: contentWidth, align });
+    y += gapAfter;
+  };
+
+  // Header.
+  writeLine("Student Report Card", {
+    fontSize: 18,
+    bold: true,
+    align: "center",
+    gapAfter: 24,
+  });
+  writeLine(`${card.session?.name || ""} — ${card.term?.name || ""}`, {
+    fontSize: 11,
+    align: "center",
+    gapAfter: 20,
+  });
+
+  writeLine(`Name: ${studentName}`, { fontSize: 12, gapAfter: 16 });
+  writeLine(`Admission No: ${card.student?.admissionNumber || "—"}`, {
+    fontSize: 12,
+    gapAfter: 16,
+  });
+  writeLine(`Class: ${className}`, { fontSize: 12, gapAfter: 24 });
+
+  const subjects = card.subjects || [];
+
+  // Different subjects can have different score-component configs (e.g.
+  // one subject might use Quiz/Test/Exam, another Quiz/Assignment/Test/
+  // Exam). To keep one consistent table across the whole report card, take
+  // the union of every active component across all of the student's
+  // subjects, in first-seen order, and show "—" where a given subject
+  // doesn't use that column.
+  const breakdownColumns = [];
+  const seenKeys = new Set();
+  for (const row of subjects) {
+    const components = row.classSubject?.scoreComponents || [];
+    for (const component of components) {
+      if (component.isActive && !seenKeys.has(component.key)) {
+        seenKeys.add(component.key);
+        breakdownColumns.push({ key: component.key, label: component.label });
+      }
     }
   }
 
-  doc.moveDown(2);
-  doc.fontSize(11).font("Helvetica-Bold").text("Summary");
-  doc.font("Helvetica").fontSize(10);
-  doc.text(
-    `Total Score: ${card.summary?.totalScore ?? 0} / ${card.summary?.totalMaxMarks ?? 0}`,
+  // Subject score table. Column widths sum to contentWidth so every row —
+  // header and data — lines up under the same fixed grid. Fixed columns
+  // (Subject, Total, %, Grade, Remark) get a set share; the breakdown
+  // columns split the remainder evenly between them.
+  const fixedColumnShares = {
+    subject: 0.18,
+    total: 0.11,
+    percentage: 0.08,
+    grade: 0.09,
+    remark: 0.16,
+  };
+  const fixedShareSum = Object.values(fixedColumnShares).reduce(
+    (a, b) => a + b,
+    0,
   );
-  doc.text(`Average: ${card.summary?.averagePercentage ?? 0}%`);
-  doc.text(
+  const breakdownShareEach =
+    breakdownColumns.length > 0
+      ? (1 - fixedShareSum) / breakdownColumns.length
+      : 0;
+
+  const columns = [
+    {
+      key: "subject",
+      label: "Subject",
+      width: contentWidth * fixedColumnShares.subject,
+    },
+    ...breakdownColumns.map((c) => ({
+      key: c.key,
+      // Long labels ("Assignment") don't fit a narrow breakdown column
+      // without wrapping or colliding with the next column, so the header
+      // shows an abbreviation here; the full label is still used
+      // everywhere else (Mark Entries UI, score-component config, etc).
+      label: c.label.length > 6 ? `${c.label.slice(0, 5)}.` : c.label,
+      width: contentWidth * breakdownShareEach,
+    })),
+    {
+      key: "total",
+      label: "Total",
+      width: contentWidth * fixedColumnShares.total,
+    },
+    {
+      key: "percentage",
+      label: "%",
+      width: contentWidth * fixedColumnShares.percentage,
+    },
+    {
+      key: "grade",
+      label: "Grade",
+      width: contentWidth * fixedColumnShares.grade,
+    },
+    {
+      key: "remark",
+      label: "Remark",
+      width: contentWidth * fixedColumnShares.remark,
+    },
+  ];
+
+  const columnGutter = 6; // px gap reserved at the right edge of each column
+
+  const drawTableRow = (cells, { bold = false, fontSize = 10 } = {}) => {
+    ensureSpace(lineHeight + 4);
+    let x = pageLeft;
+    doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(fontSize);
+    cells.forEach((text, i) => {
+      doc.text(String(text), x, y, {
+        width: Math.max(columns[i].width - columnGutter, 10),
+        ellipsis: true,
+        lineBreak: false,
+      });
+      x += columns[i].width;
+    });
+    y += lineHeight;
+  };
+
+  drawTableRow(
+    columns.map((c) => c.label),
+    { bold: true, fontSize: 9 },
+  );
+  // Rule under the header row.
+  ensureSpace(6);
+  doc
+    .moveTo(pageLeft, y)
+    .lineTo(pageRight, y)
+    .strokeColor("#cccccc")
+    .lineWidth(0.5)
+    .stroke();
+  y += 6;
+
+  if (subjects.length === 0) {
+    writeLine("No subject scores recorded for this term yet.", {
+      fontSize: 10,
+      gapAfter: lineHeight,
+    });
+  } else {
+    for (const row of subjects) {
+      const subjectName = row.classSubject?.subject?.name || "—";
+
+      const breakdownValues = breakdownColumns.map((col) => {
+        // row.scores is a Mongoose Map here (these are live documents, not
+        // serialized JSON), so .get(key) is required rather than bracket
+        // access. A subject that doesn't use this column shows "—".
+        const usesThisComponent = (
+          row.classSubject?.scoreComponents || []
+        ).some((c) => c.key === col.key);
+        if (!usesThisComponent) return "—";
+        const value = row.scores?.get
+          ? row.scores.get(col.key)
+          : row.scores?.[col.key];
+        return value === undefined || value === null ? "—" : String(value);
+      });
+
+      drawTableRow([
+        subjectName,
+        ...breakdownValues,
+        String(row.total ?? "—"),
+        `${row.percentage ?? 0}%`,
+        row.grade || "—",
+        row.remark || "—",
+      ]);
+    }
+  }
+
+  y += 20;
+
+  // Summary.
+  writeLine("Summary", { fontSize: 12, bold: true, gapAfter: 18 });
+  writeLine(
+    `Total Score: ${card.summary?.totalScore ?? 0} / ${card.summary?.totalMaxMarks ?? 0}`,
+    { fontSize: 10, gapAfter: lineHeight },
+  );
+  writeLine(`Average: ${card.summary?.averagePercentage ?? 0}%`, {
+    fontSize: 10,
+    gapAfter: lineHeight,
+  });
+  writeLine(
     `Attendance: ${card.summary?.attendance?.present ?? 0} present, ` +
       `${card.summary?.attendance?.absent ?? 0} absent, ` +
       `${card.summary?.attendance?.late ?? 0} late ` +
       `(${card.summary?.attendance?.attendancePercentage ?? 0}%)`,
+    { fontSize: 10, gapAfter: lineHeight },
   );
 };
 
