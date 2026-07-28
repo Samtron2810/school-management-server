@@ -54,6 +54,37 @@ const idFormatSchema = new Schema(
   { _id: false },
 );
 
+// Global mark-entry columns (e.g. CA 1, CA 2, Test, Exam). School-wide and
+// admin-only — every class and every subject shares this same set, so
+// report cards are consistent no matter which teacher entered the scores.
+const scoreComponentSchema = new Schema(
+  {
+    key: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+    label: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    maxMarks: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    // Inactive components stay visible (read-only) on the mark-entry grid
+    // so past scores remain visible, but are excluded from the total.
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  { _id: false },
+);
+
 const schoolSettingSchema = new Schema(
   {
     schoolName: {
@@ -105,6 +136,20 @@ const schoolSettingSchema = new Schema(
       default: 40,
       min: 0,
       max: 100,
+    },
+
+    // Global mark-entry columns, shared by every class and subject
+    // school-wide. Only admin can rename or toggle these (see
+    // setting.service.js#updateScoreComponents); teachers see them as
+    // fixed, read-only column definitions on the Mark Entries grid.
+    scoreComponents: {
+      type: [scoreComponentSchema],
+      default: () => [
+        { key: "ca1", label: "CA 1", maxMarks: 10, isActive: true },
+        { key: "ca2", label: "CA 2", maxMarks: 10, isActive: true },
+        { key: "test", label: "Test", maxMarks: 20, isActive: true },
+        { key: "exam", label: "Exam", maxMarks: 60, isActive: true },
+      ],
     },
 
     // Auto-ID sequences for teacherId / admissionNumber / parentId.

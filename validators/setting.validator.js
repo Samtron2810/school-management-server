@@ -32,6 +32,30 @@ export const updateSettingsValidator = [
 
   body("gradeBands.*.remark").optional().trim(),
 
+  body("scoreComponents")
+    .optional()
+    .isArray({ min: 1 })
+    .withMessage("Score components must be a non-empty array"),
+
+  body("scoreComponents.*.key")
+    .trim()
+    .notEmpty()
+    .withMessage("Each score component needs a key"),
+
+  body("scoreComponents.*.label")
+    .trim()
+    .notEmpty()
+    .withMessage("Each score component needs a label"),
+
+  body("scoreComponents.*.maxMarks")
+    .isFloat({ min: 0 })
+    .withMessage("Max marks must be zero or greater"),
+
+  body("scoreComponents.*.isActive")
+    .optional()
+    .isBoolean()
+    .withMessage("isActive must be true or false"),
+
   body("passingScore")
     .optional()
     .isFloat({ min: 0, max: 100 })

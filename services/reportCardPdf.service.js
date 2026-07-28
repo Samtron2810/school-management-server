@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import { createRequire } from "module";
 import reportCardService from "./reportCard.service.js";
+import settingService from "./setting.service.js";
 import ApiError from "../utils/ApiError.js";
 
 // archiver ships as CommonJS; Node's strict ESM loader can't always
@@ -8,6 +9,27 @@ import ApiError from "../utils/ApiError.js";
 // so it's pulled in via createRequire instead of a plain default import.
 const require = createRequire(import.meta.url);
 const archiver = require("archiver");
+
+// Mirrors SchoolSetting's own schema default, used only if settings can't
+// be loaded at all so the PDF still renders something sensible.
+const fallbackScoreComponents = [
+  { key: "ca1", label: "CA 1", maxMarks: 10, isActive: true },
+  { key: "ca2", label: "CA 2", maxMarks: 10, isActive: true },
+  { key: "test", label: "Test", maxMarks: 20, isActive: true },
+  { key: "exam", label: "Exam", maxMarks: 60, isActive: true },
+];
+
+const getGlobalScoreComponents = async () => {
+  try {
+    const settings = await settingService.getSettings();
+    if (Array.isArray(settings.scoreComponents) && settings.scoreComponents.length > 0) {
+      return settings.scoreComponents;
+    }
+  } catch {
+    // fall through
+  }
+  return fallbackScoreComponents;
+};
 
 // Draws report card content onto an already-created PDFDocument. Caller is
 // responsible for creating the doc, piping/collecting its output, and
@@ -17,9 +39,9 @@ const archiver = require("archiver");
 // and we track `y` ourselves in a local variable. PDFKit's own auto-flow
 // cursor (doc.y) is unreliable once you've called text() with explicit
 // coordinates — mixing explicit positioning with moveDown()/auto-flow text
-// is what caused the previous scattered/overlapping layout. Keeping one
+// is what caused an earlier scattered/overlapping layout. Keeping one
 // manual cursor for the whole page avoids that entirely.
-const drawReportCard = (doc, card) => {
+const drawReportCard = async (doc, card) => {
   const studentName =
     card.student?.user?.fullName || card.student?.admissionNumber || "Student";
   const className = card.enrollment?.schoolClass?.fullName || "—";
@@ -55,12 +77,7 @@ const drawReportCard = (doc, card) => {
   };
 
   // Header.
-  writeLine("Student Report Card", {
-    fontSize: 18,
-    bold: true,
-    align: "center",
-    gapAfter: 24,
-  });
+  writeLine("Student Report Card", { fontSize: 18, bold: true, align: "center", gapAfter: 24 });
   writeLine(`${card.session?.name || ""} — ${card.term?.name || ""}`, {
     fontSize: 11,
     align: "center",
@@ -76,23 +93,14 @@ const drawReportCard = (doc, card) => {
 
   const subjects = card.subjects || [];
 
-  // Different subjects can have different score-component configs (e.g.
-  // one subject might use Quiz/Test/Exam, another Quiz/Assignment/Test/
-  // Exam). To keep one consistent table across the whole report card, take
-  // the union of every active component across all of the student's
-  // subjects, in first-seen order, and show "—" where a given subject
-  // doesn't use that column.
-  const breakdownColumns = [];
-  const seenKeys = new Set();
-  for (const row of subjects) {
-    const components = row.classSubject?.scoreComponents || [];
-    for (const component of components) {
-      if (component.isActive && !seenKeys.has(component.key)) {
-        seenKeys.add(component.key);
-        breakdownColumns.push({ key: component.key, label: component.label });
-      }
-    }
-  }
+  // Score-component columns (CA 1, CA 2, Test, Exam, etc) are global and
+  // admin-managed — every subject on this report card shares the exact
+  // same set, so there's no need to reconcile differing per-subject
+  // configs here anymore.
+  const scoreComponents = await getGlobalScoreComponents();
+  const breakdownColumns = scoreComponents
+    .filter((c) => c.isActive)
+    .map((c) => ({ key: c.key, label: c.label }));
 
   // Subject score table. Column widths sum to contentWidth so every row —
   // header and data — lines up under the same fixed grid. Fixed columns
@@ -105,50 +113,28 @@ const drawReportCard = (doc, card) => {
     grade: 0.09,
     remark: 0.16,
   };
-  const fixedShareSum = Object.values(fixedColumnShares).reduce(
-    (a, b) => a + b,
-    0,
-  );
+  const fixedShareSum = Object.values(fixedColumnShares).reduce((a, b) => a + b, 0);
   const breakdownShareEach =
     breakdownColumns.length > 0
       ? (1 - fixedShareSum) / breakdownColumns.length
       : 0;
 
   const columns = [
-    {
-      key: "subject",
-      label: "Subject",
-      width: contentWidth * fixedColumnShares.subject,
-    },
+    { key: "subject", label: "Subject", width: contentWidth * fixedColumnShares.subject },
     ...breakdownColumns.map((c) => ({
       key: c.key,
-      // Long labels ("Assignment") don't fit a narrow breakdown column
-      // without wrapping or colliding with the next column, so the header
-      // shows an abbreviation here; the full label is still used
-      // everywhere else (Mark Entries UI, score-component config, etc).
+      // Long labels don't fit a narrow breakdown column without wrapping
+      // or colliding with the next column, so the header shows an
+      // abbreviation here; the full label is still used everywhere else
+      // (Mark Entries UI, school settings, etc). CA 1/CA 2/Test/Exam are
+      // all short enough to never actually need this in practice.
       label: c.label.length > 6 ? `${c.label.slice(0, 5)}.` : c.label,
       width: contentWidth * breakdownShareEach,
     })),
-    {
-      key: "total",
-      label: "Total",
-      width: contentWidth * fixedColumnShares.total,
-    },
-    {
-      key: "percentage",
-      label: "%",
-      width: contentWidth * fixedColumnShares.percentage,
-    },
-    {
-      key: "grade",
-      label: "Grade",
-      width: contentWidth * fixedColumnShares.grade,
-    },
-    {
-      key: "remark",
-      label: "Remark",
-      width: contentWidth * fixedColumnShares.remark,
-    },
+    { key: "total", label: "Total", width: contentWidth * fixedColumnShares.total },
+    { key: "percentage", label: "%", width: contentWidth * fixedColumnShares.percentage },
+    { key: "grade", label: "Grade", width: contentWidth * fixedColumnShares.grade },
+    { key: "remark", label: "Remark", width: contentWidth * fixedColumnShares.remark },
   ];
 
   const columnGutter = 6; // px gap reserved at the right edge of each column
@@ -194,14 +180,8 @@ const drawReportCard = (doc, card) => {
       const breakdownValues = breakdownColumns.map((col) => {
         // row.scores is a Mongoose Map here (these are live documents, not
         // serialized JSON), so .get(key) is required rather than bracket
-        // access. A subject that doesn't use this column shows "—".
-        const usesThisComponent = (
-          row.classSubject?.scoreComponents || []
-        ).some((c) => c.key === col.key);
-        if (!usesThisComponent) return "—";
-        const value = row.scores?.get
-          ? row.scores.get(col.key)
-          : row.scores?.[col.key];
+        // access.
+        const value = row.scores?.get ? row.scores.get(col.key) : row.scores?.[col.key];
         return value === undefined || value === null ? "—" : String(value);
       });
 
@@ -240,11 +220,7 @@ const drawReportCard = (doc, card) => {
 // Generates a single student's report card PDF and streams it directly to
 // the HTTP response.
 const streamStudentReportCardPdf = async (studentId, query, user, res) => {
-  const card = await reportCardService.getStudentReportCard(
-    studentId,
-    query,
-    user,
-  );
+  const card = await reportCardService.getStudentReportCard(studentId, query, user);
 
   const studentName = card.student?.user?.fullName || "student";
   const filename = `report-card-${studentName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
@@ -254,7 +230,7 @@ const streamStudentReportCardPdf = async (studentId, query, user, res) => {
 
   const doc = new PDFDocument({ size: "A4", margin: 40 });
   doc.pipe(res);
-  drawReportCard(doc, card);
+  await drawReportCard(doc, card);
   doc.end();
 };
 
@@ -268,21 +244,14 @@ const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
   }
 
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader(
-    "Content-Disposition",
-    'attachment; filename="report-cards.zip"',
-  );
+  res.setHeader("Content-Disposition", 'attachment; filename="report-cards.zip"');
 
   const archive = archiver("zip", { zlib: { level: 9 } });
   archive.pipe(res);
 
   for (const studentId of studentIds) {
     try {
-      const card = await reportCardService.getStudentReportCard(
-        studentId,
-        query,
-        user,
-      );
+      const card = await reportCardService.getStudentReportCard(studentId, query, user);
       const studentName = card.student?.user?.fullName || studentId;
       const filename = `${studentName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
 
@@ -293,8 +262,7 @@ const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
       const buffer = await new Promise((resolve, reject) => {
         doc.on("end", () => resolve(Buffer.concat(chunks)));
         doc.on("error", reject);
-        drawReportCard(doc, card);
-        doc.end();
+        drawReportCard(doc, card).then(() => doc.end()).catch(reject);
       });
 
       archive.append(buffer, { name: filename });

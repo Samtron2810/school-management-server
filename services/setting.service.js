@@ -1,4 +1,5 @@
 import SchoolSetting from "../models/SchoolSetting.js";
+import ApiError from "../utils/ApiError.js";
 
 // Returns the singleton settings document, creating it on first use.
 const getSettings = async () => {
@@ -26,6 +27,32 @@ const updateSettings = async (data) => {
       minScore: Number(band.minScore),
       gradePoint: Number(band.gradePoint ?? 0),
       remark: band.remark ?? "",
+    }));
+  }
+
+  // Global mark-entry columns (CA 1, CA 2, Test, Exam, etc). Shared by
+  // every class and subject school-wide — see models/SchoolSetting.js.
+  if (Array.isArray(data.scoreComponents) && data.scoreComponents.length > 0) {
+    const seenKeys = new Set();
+    for (const component of data.scoreComponents) {
+      if (!component.key || !component.label) {
+        throw new ApiError(400, "Each score component needs a key and label.");
+      }
+      const key = String(component.key).trim().toLowerCase();
+      if (seenKeys.has(key)) {
+        throw new ApiError(400, `Duplicate score component key: ${key}`);
+      }
+      seenKeys.add(key);
+      if (component.maxMarks === undefined || Number(component.maxMarks) < 0) {
+        throw new ApiError(400, `Invalid max marks for "${component.label}".`);
+      }
+    }
+
+    settings.scoreComponents = data.scoreComponents.map((component) => ({
+      key: String(component.key).trim().toLowerCase(),
+      label: String(component.label).trim(),
+      maxMarks: Number(component.maxMarks),
+      isActive: component.isActive !== false,
     }));
   }
 

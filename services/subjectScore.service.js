@@ -11,14 +11,15 @@ import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import settingService from "./setting.service.js";
 
-// Maps Assessment.type -> the default score-component key it should
-// prefill. "Examination" intentionally maps to "exam" (not a literal
-// lowercase of the type) to match the default ClassSubject.scoreComponents
-// keys. If a class subject's columns were renamed and no longer include
-// this key, applyAttemptScore no-ops rather than guessing.
+// Maps Assessment.type -> the global score-component key it should
+// prefill. Score components are now school-wide (see
+// models/SchoolSetting.js), not per-class-subject, so every subject shares
+// the same four columns: CA 1, CA 2, Test, Exam. Quiz and Assignment don't
+// have a dedicated column of their own, so they map onto CA 1 / CA 2
+// respectively -- if that mapping ever changes, update it here only.
 export const ASSESSMENT_TYPE_TO_COMPONENT_KEY = {
-  Assignment: "assignment",
-  Quiz: "quiz",
+  Quiz: "ca1",
+  Assignment: "ca2",
   Test: "test",
   Examination: "exam",
 };
@@ -32,6 +33,31 @@ const defaultGradeBands = [
   { min: 40, grade: "E", gradePoint: 1, remark: "Pass" },
   { min: 0, grade: "F", gradePoint: 0, remark: "Fail" },
 ];
+
+// The default set used only if settings somehow can't be loaded at all —
+// mirrors SchoolSetting's own schema default so behavior degrades
+// gracefully rather than breaking mark entry outright.
+const fallbackScoreComponents = [
+  { key: "ca1", label: "CA 1", maxMarks: 10, isActive: true },
+  { key: "ca2", label: "CA 2", maxMarks: 10, isActive: true },
+  { key: "test", label: "Test", maxMarks: 20, isActive: true },
+  { key: "exam", label: "Exam", maxMarks: 60, isActive: true },
+];
+
+// The single, school-wide set of mark-entry columns. Admin-managed via
+// PATCH /settings; every class and subject reads the same list, so no
+// teacher can create their own inconsistent column set.
+const getGlobalScoreComponents = async () => {
+  try {
+    const settings = await settingService.getSettings();
+    if (Array.isArray(settings.scoreComponents) && settings.scoreComponents.length > 0) {
+      return settings.scoreComponents;
+    }
+  } catch {
+    // fall through to the fallback below
+  }
+  return fallbackScoreComponents;
+};
 
 const getGradingConfig = async () => {
   let settings = null;
@@ -164,6 +190,8 @@ const getMarkEntryGrid = async (query, user) => {
   const session = await findDocumentOrFail(Session, sessionId, "Session");
   const term = await findDocumentOrFail(Term, termId, "Term");
 
+  const scoreComponents = await getGlobalScoreComponents();
+
   const enrollments = await Enrollment.find({
     schoolClass: classSubject.schoolClass._id,
     session: session._id,
@@ -208,7 +236,7 @@ const getMarkEntryGrid = async (query, user) => {
     classSubject,
     session,
     term,
-    scoreComponents: classSubject.scoreComponents,
+    scoreComponents,
     students: rows,
   };
 };
@@ -245,7 +273,8 @@ const bulkSaveScores = async (data, user) => {
   const session = await findDocumentOrFail(Session, sessionId, "Session");
   const term = await findDocumentOrFail(Term, termId, "Term");
 
-  const validKeys = new Set((classSubject.scoreComponents || []).map((c) => c.key));
+  const scoreComponents = await getGlobalScoreComponents();
+  const validKeys = new Set(scoreComponents.map((c) => c.key));
 
   const saved = [];
   const failed = [];
@@ -286,7 +315,7 @@ const bulkSaveScores = async (data, user) => {
         if (Number.isNaN(numeric) || numeric < 0) {
           throw new ApiError(400, `Invalid score for "${key}" (student ${student._id}).`);
         }
-        const component = classSubject.scoreComponents.find((c) => c.key === key);
+        const component = scoreComponents.find((c) => c.key === key);
         if (component && numeric > component.maxMarks) {
           throw new ApiError(400, `Score for "${key}" exceeds max marks (${component.maxMarks}).`);
         }
@@ -295,7 +324,7 @@ const bulkSaveScores = async (data, user) => {
         row.sourceAttempts.delete(key);
       }
 
-      const totals = await computeTotals(row.scores, classSubject.scoreComponents);
+      const totals = await computeTotals(row.scores, scoreComponents);
       Object.assign(row, totals);
 
       await row.save();
@@ -328,18 +357,17 @@ const applyAttemptScore = async ({
   const classSubjectDoc = await ClassSubject.findById(classSubject);
   if (!classSubjectDoc) return null;
 
-  const component = (classSubjectDoc.scoreComponents || []).find(
-    (c) => c.key === componentKey,
-  );
+  const scoreComponents = await getGlobalScoreComponents();
+  const component = scoreComponents.find((c) => c.key === componentKey);
   if (!component) {
-    // Assessment type has no matching column configured for this subject —
-    // skip silently rather than failing the grading flow.
+    // No global column matches this assessment type's mapped key — skip
+    // silently rather than failing the grading flow.
     return null;
   }
 
   // The assessment may be marked out of a different total than the
-  // mark-entry column (e.g. a 25-point quiz feeding a "quiz" column capped
-  // at 10). Scale proportionally so the column never exceeds its maxMarks.
+  // mark-entry column (e.g. a 25-point quiz feeding "CA 1" capped at 10).
+  // Scale proportionally so the column never exceeds its maxMarks.
   const rawScore = Number(score) || 0;
   const sourceTotal = Number(assessmentTotalMarks) || 0;
   const scaledScore =
@@ -363,7 +391,7 @@ const applyAttemptScore = async ({
   row.scores.set(componentKey, scaledScore);
   row.sourceAttempts.set(componentKey, attemptId);
 
-  const totals = await computeTotals(row.scores, classSubjectDoc.scoreComponents);
+  const totals = await computeTotals(row.scores, scoreComponents);
   Object.assign(row, totals);
 
   await row.save();

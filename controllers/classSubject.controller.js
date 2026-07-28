@@ -85,22 +85,6 @@ const updateClassSubject = asyncHandler(async (req, res) => {
     );
 });
 
-const updateScoreComponents = asyncHandler(async (req, res) => {
-  const classSubject = await classSubjectService.updateScoreComponents(
-    req.params.id,
-    req.body.scoreComponents,
-  );
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        "Score components updated successfully.",
-        classSubject,
-      ),
-    );
-});
-
 const deleteClassSubject = asyncHandler(async (req, res) => {
   await classSubjectService.deleteClassSubject(req.params.id);
   return res
@@ -114,7 +98,6 @@ export default {
   getClassSubjects,
   getClassSubject,
   updateClassSubject,
-  updateScoreComponents,
   deleteClassSubject,
   getMyClassSubjects,
 };
