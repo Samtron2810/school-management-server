@@ -97,12 +97,53 @@ const isVisibleToUser = async (announcement, user, academicContext) => {
     );
   }
 
-  if (announcement.targetParents.length > 0 && user.role === "parent") {
+  if (user.role === "parent") {
     const parent = await getParentProfile(user._id);
 
-    return announcement.targetParents.some(
-      (id) => id.toString() === parent._id.toString(),
-    );
+    // 1. Explicitly targeted as a parent by ID.
+    if (
+      announcement.targetParents.some(
+        (id) => id.toString() === parent._id.toString(),
+      )
+    ) {
+      return true;
+    }
+
+    // 2. Find all children linked to this parent.
+    const links = await ParentStudent.find({
+      parent: parent._id,
+      isActive: true,
+    }).select("student");
+    const childIds = links.map((link) => link.student.toString());
+    if (childIds.length === 0) return false;
+
+    // 3. Any child is in targetStudents.
+    if (announcement.targetStudents.length > 0) {
+      const matchesStudent = announcement.targetStudents.some((sid) =>
+        childIds.includes(sid.toString()),
+      );
+      if (matchesStudent) return true;
+    }
+
+    // 4. Any child is enrolled in a targetClass.
+    if (announcement.targetClasses.length > 0 && academicContext) {
+      const { session, term } = academicContext;
+      const enrollment = await Enrollment.findOne({
+        student: { $in: childIds },
+        schoolClass: { $in: announcement.targetClasses },
+        session: session._id,
+        term: term._id,
+        status: "Active",
+      });
+      if (enrollment) return true;
+    }
+
+    // 5. Announcement targets the "student" role generally — parents can see it.
+    if (announcement.targetRoles.includes("student")) {
+      return true;
+    }
+
+    return false;
   }
 
   if (announcement.targetClasses.length > 0) {
