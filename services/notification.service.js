@@ -14,12 +14,13 @@ import ParentStudent from "../models/ParentStudent.js";
 */
 
 // Fan out one notification to many users at once (duplicates ignored by caller).
-const notifyUsers = async (userIds, { title, message, type = "general", link = "" }) => {
+const notifyUsers = async (
+  userIds,
+  { title, message, type = "general", link = "" },
+) => {
   const uniqueIds = [
     ...new Set(
-      (userIds || [])
-        .filter(Boolean)
-        .map((id) => (id?._id ?? id).toString()),
+      (userIds || []).filter(Boolean).map((id) => (id?._id ?? id).toString()),
     ),
   ];
 
@@ -126,6 +127,17 @@ const markAllAsRead = async (user) => {
   );
 };
 
+const deleteNotification = async (notificationId, user) => {
+  if (!mongoose.Types.ObjectId.isValid(notificationId)) {
+    return null;
+  }
+
+  return await Notification.findOneAndDelete({
+    _id: notificationId,
+    user: user._id,
+  });
+};
+
 export default {
   notifyUsers,
   notifyRoles,
@@ -133,4 +145,5 @@ export default {
   getMyNotifications,
   markAsRead,
   markAllAsRead,
+  deleteNotification,
 };

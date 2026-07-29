@@ -7,6 +7,7 @@ import Assessment from "../models/Assessment.js";
 import StudentAttempt from "../models/StudentAttempt.js";
 import Result from "../models/Result.js";
 import Announcement from "../models/Announcement.js";
+import announcementService from "./announcement.service.js";
 import Attendance from "../models/Attendance.js";
 import TeacherAssignment from "../models/TeacherAssignment.js";
 import ClassSubject from "../models/ClassSubject.js";
@@ -109,15 +110,7 @@ const getBaseSummary = async () => {
 
 const getRecentActivity = async (user) => {
   const [announcements, results, attempts, assessments] = await Promise.all([
-    Announcement.find({
-      isActive: true,
-    })
-      .sort({
-        publishAt: -1,
-        createdAt: -1,
-      })
-      .limit(5)
-      .lean(),
+    announcementService.getAnnouncements(user).then((list) => list.slice(0, 3)),
     Result.find({
       isActive: true,
     })
@@ -138,7 +131,7 @@ const getRecentActivity = async (user) => {
       .sort({
         createdAt: -1,
       })
-      .limit(5)
+      .limit(3)
       .lean(),
     StudentAttempt.find({
       isActive: true,
@@ -154,7 +147,7 @@ const getRecentActivity = async (user) => {
       .sort({
         createdAt: -1,
       })
-      .limit(5)
+      .limit(3)
       .lean(),
     Assessment.find({
       isActive: true,
@@ -162,7 +155,7 @@ const getRecentActivity = async (user) => {
       .sort({
         createdAt: -1,
       })
-      .limit(5)
+      .limit(3)
       .lean(),
   ]);
 
@@ -339,7 +332,9 @@ const getDashboard = async (user) => {
   return {
     context,
     summary:
-      user.role === "admin" ? { ...(await getBaseSummary()), ...roleSummary } : roleSummary,
+      user.role === "admin"
+        ? { ...(await getBaseSummary()), ...roleSummary }
+        : roleSummary,
     recentActivity,
     chartData,
   };

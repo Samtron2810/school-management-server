@@ -11,7 +11,13 @@ const getMyNotifications = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, "Notifications fetched successfully.", notifications));
+    .json(
+      new ApiResponse(
+        200,
+        "Notifications fetched successfully.",
+        notifications,
+      ),
+    );
 });
 
 const markAsRead = asyncHandler(async (req, res) => {
@@ -33,8 +39,28 @@ const markAllAsRead = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "All notifications marked as read."));
 });
 
+const deleteNotification = asyncHandler(async (req, res) => {
+  const notification = await notificationService.deleteNotification(
+    req.params.id,
+    req.user,
+  );
+
+  if (!notification) {
+    return res
+      .status(404)
+      .json(new ApiResponse(404, "Notification not found."));
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, "Notification deleted successfully.", notification),
+    );
+});
+
 export default {
   getMyNotifications,
   markAsRead,
   markAllAsRead,
+  deleteNotification,
 };
