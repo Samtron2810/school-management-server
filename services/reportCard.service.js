@@ -11,6 +11,7 @@ import Attendance from "../models/Attendance.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import notificationService from "./notification.service.js";
 
 const getStudentProfile = async (userId) => {
   const student = await Student.findOne({ user: userId, isActive: true });
@@ -68,7 +69,10 @@ const listClassReportCards = async (query, user) => {
   })
     .populate({
       path: "student",
-      populate: { path: "user", select: "firstName lastName otherName username" },
+      populate: {
+        path: "user",
+        select: "firstName lastName otherName username",
+      },
     })
     .sort({ rollNumber: 1 });
 
@@ -80,7 +84,10 @@ const listClassReportCards = async (query, user) => {
     student: { $in: studentIds },
     term: term._id,
     isActive: true,
-  }).populate({ path: "classSubject", match: { schoolClass: schoolClass._id } });
+  }).populate({
+    path: "classSubject",
+    match: { schoolClass: schoolClass._id },
+  });
 
   const scoresByStudent = new Map();
   for (const row of scores) {
@@ -99,7 +106,8 @@ const listClassReportCards = async (query, user) => {
   const students = enrollments
     .filter((enrollment) => enrollment.student)
     .map((enrollment) => {
-      const studentRows = scoresByStudent.get(enrollment.student._id.toString()) || [];
+      const studentRows =
+        scoresByStudent.get(enrollment.student._id.toString()) || [];
       if (studentRows.length === 0) return null;
 
       const subjectCount = studentRows.length;
@@ -174,9 +182,14 @@ const buildStudentReportCard = async (student, session, term) => {
       : Number((((present + late) / totalAttendance) * 100).toFixed(2));
 
   const totalScore = scores.reduce((sum, row) => sum + (row.total || 0), 0);
-  const totalMaxMarks = scores.reduce((sum, row) => sum + (row.totalMaxMarks || 0), 0);
+  const totalMaxMarks = scores.reduce(
+    (sum, row) => sum + (row.totalMaxMarks || 0),
+    0,
+  );
   const averagePercentage =
-    totalMaxMarks === 0 ? 0 : Number(((totalScore / totalMaxMarks) * 100).toFixed(2));
+    totalMaxMarks === 0
+      ? 0
+      : Number(((totalScore / totalMaxMarks) * 100).toFixed(2));
 
   const gradeDistribution = scores.reduce(
     (acc, row) => {
@@ -262,7 +275,11 @@ const publishClassReportCards = async (schoolClassId, body, user) => {
     throw new ApiError(403, "You are not authorized to publish report cards.");
   }
 
-  const schoolClass = await findDocumentOrFail(SchoolClass, schoolClassId, "Class");
+  const schoolClass = await findDocumentOrFail(
+    SchoolClass,
+    schoolClassId,
+    "Class",
+  );
   const { session, term } = await resolveSessionTerm(body);
 
   const enrollments = await Enrollment.find({
@@ -279,7 +296,9 @@ const publishClassReportCards = async (schoolClassId, body, user) => {
     isActive: true,
   })
     .populate({ path: "classSubject", match: { schoolClass: schoolClass._id } })
-    .then((rows) => rows.filter((row) => row.classSubject).map((row) => row._id));
+    .then((rows) =>
+      rows.filter((row) => row.classSubject).map((row) => row._id),
+    );
 
   await SubjectScore.updateMany(
     { _id: { $in: classSubjectRowIds } },
@@ -298,16 +317,43 @@ const publishClassReportCards = async (schoolClassId, body, user) => {
     { upsert: true, new: true },
   );
 
+  // Notify all students in the class and their parents.
+  try {
+    const studentDocs = await Student.find({ _id: { $in: studentIds } }).select(
+      "user",
+    );
+    for (const studentDoc of studentDocs) {
+      await notificationService.notifyStudentAndParents(studentDoc._id, {
+        title: "Report Card Published",
+        message: `Your report card for ${schoolClass.name || schoolClass.className} ${schoolClass.arm || ""} (${term.name}) has been published.`,
+        type: "grade",
+        link: `/${user.role}/report-cards`,
+      });
+    }
+  } catch (error) {
+    console.error(
+      "Failed to send report card notifications:",
+      error?.message || error,
+    );
+  }
+
   return batch;
 };
 
 // POST /report-cards/:schoolClass/unpublish — class-level withdrawal.
 const unpublishClassReportCards = async (schoolClassId, body, user) => {
   if (!["admin", "teacher"].includes(user.role)) {
-    throw new ApiError(403, "You are not authorized to unpublish report cards.");
+    throw new ApiError(
+      403,
+      "You are not authorized to unpublish report cards.",
+    );
   }
 
-  const schoolClass = await findDocumentOrFail(SchoolClass, schoolClassId, "Class");
+  const schoolClass = await findDocumentOrFail(
+    SchoolClass,
+    schoolClassId,
+    "Class",
+  );
   const { session, term } = await resolveSessionTerm(body);
 
   const batch = await ReportCardBatch.findOneAndUpdate(
@@ -342,7 +388,27 @@ const setStudentReportCardPublishState = async (studentId, body, user) => {
     { isPublished: body.isPublished },
   );
 
-  return { student: student._id, term: term._id, isPublished: body.isPublished };
+  // Notify the student and their parents.
+  try {
+    const action = body.isPublished ? "published" : "unpublished";
+    await notificationService.notifyStudentAndParents(student._id, {
+      title: `Report Card ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+      message: `Your report card has been ${action}.`,
+      type: "grade",
+      link: `/${user.role}/report-cards`,
+    });
+  } catch (error) {
+    console.error(
+      "Failed to send report card notification:",
+      error?.message || error,
+    );
+  }
+
+  return {
+    student: student._id,
+    term: term._id,
+    isPublished: body.isPublished,
+  };
 };
 
 export default {

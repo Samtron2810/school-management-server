@@ -9,6 +9,7 @@ import ClassSubject from "../models/ClassSubject.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import notificationService from "./notification.service.js";
 
 const roles = ["admin", "teacher", "student", "parent"];
 
@@ -167,6 +168,35 @@ const createAnnouncement = async (data, user) => {
     isPinned: data.isPinned ?? false,
     createdBy: user._id,
   });
+
+  // Notify the target audience about the new announcement.
+  try {
+    const audience = buildAudience(data);
+    const link = `/${user.role}/announcements`;
+
+    if (audience.targetRoles.length > 0) {
+      await notificationService.notifyRoles(audience.targetRoles, {
+        title: `New Announcement: ${announcement.title}`,
+        message: announcement.message?.substring(0, 120) || "No details",
+        type: "announcement",
+        link,
+      });
+    }
+
+    for (const studentId of audience.targetStudents) {
+      await notificationService.notifyStudentAndParents(studentId, {
+        title: `New Announcement: ${announcement.title}`,
+        message: announcement.message?.substring(0, 120) || "No details",
+        type: "announcement",
+        link,
+      });
+    }
+  } catch (error) {
+    console.error(
+      "Failed to send announcement notifications:",
+      error?.message || error,
+    );
+  }
 
   return announcement;
 };

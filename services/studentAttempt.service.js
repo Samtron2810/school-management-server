@@ -15,6 +15,7 @@ import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import subjectScoreService, {
   ASSESSMENT_TYPE_TO_COMPONENT_KEY,
 } from "./subjectScore.service.js";
+import notificationService from "./notification.service.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -353,6 +354,22 @@ const finalizeAttempt = async (attempt, status) => {
     );
   }
 
+  // Notify the student and their parents about the graded assessment.
+  try {
+    const scoreDisplay = `${result.score}/${result.totalPossibleMarks || assessment.totalMarks}`;
+    await notificationService.notifyStudentAndParents(attempt.student, {
+      title: "Assessment Graded",
+      message: `Your ${assessment.type} "${assessment.title}" has been graded. Score: ${scoreDisplay} (${result.percentage.toFixed(1)}%)`,
+      type: "grade",
+      link: `/student/my-results`,
+    });
+  } catch (error) {
+    console.error(
+      `Failed to send grade notification for attempt ${attempt._id}:`,
+      error?.message || error,
+    );
+  }
+
   return attempt;
 };
 
@@ -488,7 +505,9 @@ const getStudentAttempts = async (query, user) => {
     // an empty result rather than other teachers' data.
     if (
       filter.assessment &&
-      !assessmentIds.some((id) => id.toString() === filter.assessment.toString())
+      !assessmentIds.some(
+        (id) => id.toString() === filter.assessment.toString(),
+      )
     ) {
       return [];
     }
