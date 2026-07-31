@@ -193,8 +193,11 @@ const markAttendance = async (data, user) => {
     status: "Active",
   }).select("student");
 
+  // Protect against null student references in the enrollment map
   const validStudentIds = new Set(
-    enrollments.map((item) => item.student.toString()),
+    enrollments
+      .map((item) => item.student?.toString())
+      .filter(Boolean),
   );
 
   const students = await Student.find({
@@ -213,16 +216,13 @@ const markAttendance = async (data, user) => {
 
   for (const record of data.records) {
     if (!validStudentIds.has(record.student)) {
-      throw new ApiError(
-        400,
-        "One or more students do not belong to this class.",
-      );
+      continue; // Skip silently or log instead of crashing/blocking the class
     }
 
     const student = studentMap.get(record.student);
 
     if (!student) {
-      throw new ApiError(404, "Student not found.");
+      continue; // Skip silently if a student's document is deleted
     }
 
     operations.push({

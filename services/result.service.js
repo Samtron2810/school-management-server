@@ -610,11 +610,7 @@ const generateReportCard = async (studentId, query, user) => {
   };
 };
 
-const createFromAttempt = async (attemptId, user) => {
-  if (!["admin", "teacher"].includes(user.role)) {
-    throw new ApiError(403, "You are not authorized to generate results.");
-  }
-
+const internalCreateFromAttempt = async (attemptId) => {
   const attempt = await findDocumentOrFail(
     StudentAttempt,
     attemptId,
@@ -639,6 +635,14 @@ const createFromAttempt = async (attemptId, user) => {
   return await Result.create(payload);
 };
 
+const createFromAttempt = async (attemptId, user) => {
+  if (!["admin", "teacher"].includes(user.role)) {
+    throw new ApiError(403, "You are not authorized to generate results.");
+  }
+
+  return await internalCreateFromAttempt(attemptId);
+};
+
 export default {
   computeGrade,
   createResult,
@@ -649,6 +653,7 @@ export default {
   generateReportCard,
   generateClassReportCards,
   createFromAttempt,
+  internalCreateFromAttempt,
 };
 
 /*

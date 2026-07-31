@@ -16,6 +16,7 @@ import subjectScoreService, {
   ASSESSMENT_TYPE_TO_COMPONENT_KEY,
 } from "./subjectScore.service.js";
 import notificationService from "./notification.service.js";
+import resultService from "./result.service.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -354,6 +355,18 @@ const finalizeAttempt = async (attempt, status) => {
     );
   }
 
+  // Automatically sync the attempt into the legacy Result collection so
+  // it immediately shows up under "My Results" without requiring the
+  // teacher to manually click the publish button.
+  try {
+    await resultService.internalCreateFromAttempt(attempt._id);
+  } catch (error) {
+    console.error(
+      `Failed to automatically sync attempt ${attempt._id} to Result collection:`,
+      error?.message || error,
+    );
+  }
+
   // Notify the student and their parents about the graded assessment.
   try {
     const scoreDisplay = `${result.score}/${result.totalPossibleMarks || assessment.totalMarks}`;
@@ -560,35 +573,42 @@ const getAttemptQuestions = async (attemptId, user) => {
     throw new ApiError(400, "Assessment is no longer active.");
   }
 
-  const assessmentQuestions = await AssessmentQuestion.find({
-    assessment: attempt.assessment._id,
+  // Find stable questions saved for this attempt, sorted by displayOrder
+  const attemptQuestions = await StudentAttemptQuestion.find({
+    attempt: attempt._id,
+    isActive: true,
   })
-    .populate("question")
-    .sort({
-      order: 1,
-    });
+    .populate({
+      path: "assessmentQuestion",
+      populate: { path: "question" },
+    })
+    .sort({ displayOrder: 1 });
 
-  let questions = assessmentQuestions.map((item) => ({
-    id: item.question._id,
-
-    assessmentQuestion: item._id,
-
-    question: item.question.question,
-
-    options: shuffleArray(item.question.options),
-
-    marks: item.marks,
-
-    order: item.order,
-
-    isRequired: item.isRequired,
-
-    isBonus: item.isBonus,
-  }));
-
-  if (attempt.assessment.shuffleQuestions) {
-    questions = shuffleArray(questions);
+  if (attemptQuestions.length === 0) {
+    throw new ApiError(404, "Questions not found for this attempt.");
   }
+
+  const questions = attemptQuestions.map((aq) => {
+    const aqDoc = aq.assessmentQuestion;
+    if (!aqDoc || !aqDoc.question) {
+      throw new ApiError(500, "Corrupted attempt question details.");
+    }
+    const questionDoc = aqDoc.question;
+
+    // Map options to respect the stable optionOrder generated on attempt start
+    const mappedOptions = aq.optionOrder.map(index => questionDoc.options[index]);
+
+    return {
+      id: questionDoc._id,
+      assessmentQuestion: aqDoc._id,
+      question: questionDoc.question,
+      options: mappedOptions,
+      marks: aqDoc.marks,
+      order: aq.displayOrder,
+      isRequired: aqDoc.isRequired,
+      isBonus: aqDoc.isBonus,
+    };
+  });
 
   return questions;
 };

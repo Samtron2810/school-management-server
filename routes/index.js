@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { csrfProtection } from "../config/csrf.js";
 
 import authRoutes from "./auth.routes.js";
 import sessionRoutes from "./session.routes.js";
@@ -35,6 +36,18 @@ router.get("/", (req, res) => {
     success: true,
     message: "TronSchool API is running",
   });
+});
+
+// Apply CSRF protection globally on all mutating requests (POST, PUT, PATCH, DELETE) except /auth/login
+router.use((req, res, next) => {
+  const method = req.method.toLowerCase();
+  if (["get", "head", "options"].includes(method)) {
+    return next();
+  }
+  if (req.path === "/auth/login") {
+    return next();
+  }
+  csrfProtection(req, res, next);
 });
 
 router.use("/auth", authRoutes);

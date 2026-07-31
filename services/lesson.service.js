@@ -631,6 +631,52 @@ const getLessonById = async (id, user) => {
       ) {
         throw new ApiError(403, "You are not allowed to view this lesson.");
       }
+    } else if (user.role === "parent") {
+      const parent = await Parent.findOne({
+        user: user._id,
+      });
+
+      if (!parent) {
+        throw new ApiError(403, "Parent profile not found.");
+      }
+
+      const relations = await ParentStudent.find({
+        parent: parent._id,
+        isActive: true,
+      }).select("student");
+
+      const studentIds = relations.map((rel) => rel.student);
+
+      const { session: currentSession, term: currentTerm } =
+        await getCurrentAcademicContext();
+
+      const activeEnrollments = await Enrollment.find({
+        student: { $in: studentIds },
+        session: currentSession._id,
+        status: "Active",
+      }).select("schoolClass");
+
+      const parentClassIds = activeEnrollments.map((enr) =>
+        enr.schoolClass.toString(),
+      );
+
+      const lessonClassSubject = await ClassSubject.findById(
+        lesson.classSubject._id,
+      );
+
+      if (
+        !lessonClassSubject ||
+        !parentClassIds.includes(lessonClassSubject.schoolClass.toString())
+      ) {
+        throw new ApiError(403, "You are not allowed to view this lesson.");
+      }
+
+      if (
+        lesson.session._id.toString() !== currentSession._id.toString() ||
+        lesson.term._id.toString() !== currentTerm._id.toString()
+      ) {
+        throw new ApiError(403, "You are not allowed to view this lesson.");
+      }
     } else {
       throw new ApiError(403, "You are not allowed to view this lesson.");
     }

@@ -319,16 +319,34 @@ const publishClassReportCards = async (schoolClassId, body, user) => {
 
   // Notify all students in the class and their parents.
   try {
-    const studentDocs = await Student.find({ _id: { $in: studentIds } }).select(
-      "user",
-    );
+    const studentDocs = await Student.find({ _id: { $in: studentIds } }).select("user");
     for (const studentDoc of studentDocs) {
-      await notificationService.notifyStudentAndParents(studentDoc._id, {
-        title: "Report Card Published",
-        message: `Your report card for ${schoolClass.name || schoolClass.className} ${schoolClass.arm || ""} (${term.name}) has been published.`,
-        type: "grade",
-        link: `/${user.role}/report-cards`,
-      });
+      if (studentDoc.user) {
+        // Notify student
+        await notificationService.notifyUsers([studentDoc.user], {
+          title: "Report Card Published",
+          message: `Your report card for ${schoolClass.name || schoolClass.className} ${schoolClass.arm || ""} (${term.name}) has been published.`,
+          type: "grade",
+          link: `/student/report-cards`,
+        });
+      }
+
+      // Find parent users linked to student
+      const relations = await ParentStudent.find({ student: studentDoc._id, isActive: true }).select("parent");
+      const parentIds = relations.map(r => r.parent);
+      if (parentIds.length > 0) {
+        const parents = await Parent.find({ _id: { $in: parentIds } }).select("user");
+        const parentUserIds = parents.map(p => p.user).filter(Boolean);
+        if (parentUserIds.length > 0) {
+          // Notify parents
+          await notificationService.notifyUsers(parentUserIds, {
+            title: "Child's Report Card Published",
+            message: `The report card for ${studentDoc.user?.firstName || "your child"} in ${schoolClass.name || schoolClass.className} ${schoolClass.arm || ""} (${term.name}) has been published.`,
+            type: "grade",
+            link: `/parent/child-report-cards`,
+          });
+        }
+      }
     }
   } catch (error) {
     console.error(
@@ -391,12 +409,33 @@ const setStudentReportCardPublishState = async (studentId, body, user) => {
   // Notify the student and their parents.
   try {
     const action = body.isPublished ? "published" : "unpublished";
-    await notificationService.notifyStudentAndParents(student._id, {
-      title: `Report Card ${action.charAt(0).toUpperCase() + action.slice(1)}`,
-      message: `Your report card has been ${action}.`,
-      type: "grade",
-      link: `/${user.role}/report-cards`,
-    });
+    
+    // Notify student
+    if (student.user) {
+      await notificationService.notifyUsers([student.user], {
+        title: `Report Card ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+        message: `Your report card has been ${action}.`,
+        type: "grade",
+        link: `/student/report-cards`,
+      });
+    }
+
+    // Find parent users linked to student
+    const relations = await ParentStudent.find({ student: student._id, isActive: true }).select("parent");
+    const parentIds = relations.map(r => r.parent);
+    if (parentIds.length > 0) {
+      const parents = await Parent.find({ _id: { $in: parentIds } }).select("user");
+      const parentUserIds = parents.map(p => p.user).filter(Boolean);
+      if (parentUserIds.length > 0) {
+        // Notify parents
+        await notificationService.notifyUsers(parentUserIds, {
+          title: `Child's Report Card ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+          message: `The report card for your child has been ${action}.`,
+          type: "grade",
+          link: `/parent/child-report-cards`,
+        });
+      }
+    }
   } catch (error) {
     console.error(
       "Failed to send report card notification:",

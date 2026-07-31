@@ -94,6 +94,21 @@ const createTimetableEntry = async (data) => {
     throw new ApiError(400, "This class already has a period in that time slot.");
   }
 
+  const teacherClash = await Timetable.findOne({
+    teacher: assignment.teacher,
+    session: assignment.session,
+    term: assignment.term,
+    dayOfWeek: data.dayOfWeek,
+    startTime: data.startTime,
+  });
+
+  if (teacherClash) {
+    throw new ApiError(
+      400,
+      "The assigned teacher is already scheduled to teach another class in this time slot.",
+    );
+  }
+
   const entry = await Timetable.create({
     schoolClass: assignment.schoolClass,
     classSubject: classSubject._id,
@@ -225,6 +240,22 @@ const updateTimetableEntry = async (entryId, data) => {
       throw new ApiError(
         400,
         "This class already has a period in that time slot.",
+      );
+    }
+
+    const teacherClash = await Timetable.findOne({
+      teacher: entry.teacher,
+      session: entry.session,
+      term: entry.term,
+      dayOfWeek: entry.dayOfWeek,
+      startTime: entry.startTime,
+      _id: { $ne: entry._id },
+    });
+
+    if (teacherClash) {
+      throw new ApiError(
+        400,
+        "The assigned teacher is already scheduled to teach another class in this time slot.",
       );
     }
   }
