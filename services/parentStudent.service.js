@@ -17,13 +17,27 @@ const linkParentStudent = async (data) => {
     throw new ApiError(404, "Student not found.");
   }
 
-  const duplicate = await ParentStudent.findOne({
+  const existing = await ParentStudent.findOne({
     parent: parent._id,
     student: student._id,
   });
 
-  if (duplicate) {
-    throw new ApiError(400, "Parent already linked to this student.");
+  if (existing) {
+    if (existing.isActive) {
+      throw new ApiError(400, "Parent already linked to this student.");
+    }
+
+    // Reactivate the soft-deleted record and update its fields
+    existing.isActive = true;
+    existing.relationship = data.relationship;
+    existing.isPrimaryContact = data.isPrimaryContact || false;
+    existing.canReceiveResults = data.canReceiveResults ?? true;
+    existing.canPickupStudent = data.canPickupStudent ?? true;
+    existing.isEmergencyContact = data.isEmergencyContact || false;
+    existing.livesWithStudent = data.livesWithStudent ?? true;
+
+    await existing.save();
+    return existing;
   }
 
   const parentCount = await ParentStudent.countDocuments({
