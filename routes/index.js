@@ -27,6 +27,7 @@ import settingRoutes from "./setting.routes.js";
 import announcementRoutes from "./announcement.routes.js";
 import dashboardRoutes from "./dashboard.routes.js";
 import promotionRoutes from "./promotion.routes.js";
+import timetableRoutes from "./timetable.routes.js";
 import notificationRoutes from "./notification.routes.js";
 
 const router = Router();
@@ -76,6 +77,7 @@ router.use("/settings", settingRoutes);
 router.use("/announcements", announcementRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/promotions", promotionRoutes);
+router.use("/timetables", timetableRoutes);
 router.use("/notifications", notificationRoutes);
 
 export default router;
