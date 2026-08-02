@@ -44,6 +44,12 @@ const studentAnswerSchema = new Schema(
   },
 );
 
+// The most common query during live exams: find one answer by attempt + question.
+// Without this compound index, every answer save during a 1,000-student exam
+// session performs a collection scan. This is the highest-frequency write path
+// in the entire system.
+studentAnswerSchema.index({ studentAttemptQuestion: 1, isActive: 1 });
+
 const StudentAnswer = model("StudentAnswer", studentAnswerSchema);
 
 export default StudentAnswer;

@@ -3,6 +3,7 @@ import Term from "../models/Term.js";
 import Enrollment from "../models/Enrollment.js";
 
 import ApiError from "../utils/ApiError.js";
+import { invalidateAcademicContextCache } from "../utils/academicContext.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 
 const createSession = async (data) => {
@@ -83,6 +84,12 @@ const updateSession = async (sessionId, data) => {
   }
 
   await session.save();
+
+  // Bust the academic context cache so the newly active session is
+  // reflected immediately on the next request, without waiting for TTL.
+  if (data.isCurrent !== undefined) {
+    invalidateAcademicContextCache();
+  }
 
   return session;
 };

@@ -1,13 +1,34 @@
 import SchoolSetting from "../models/SchoolSetting.js";
 import ApiError from "../utils/ApiError.js";
 
+// Simple in-process cache for the settings singleton.
+// SchoolSettings almost never changes — it's admin-only and updated
+// infrequently. Caching for 60 s eliminates the most common DB hotspot:
+// every mark-entry, grading, and PDF request was hitting SchoolSetting.findOne().
+let _settingsCache = null;
+let _settingsCacheAt = 0;
+const SETTINGS_TTL_MS = 60_000; // 60 seconds
+
+const invalidateSettingsCache = () => {
+  _settingsCache = null;
+  _settingsCacheAt = 0;
+};
+
 // Returns the singleton settings document, creating it on first use.
 const getSettings = async () => {
+  const now = Date.now();
+  if (_settingsCache && now - _settingsCacheAt < SETTINGS_TTL_MS) {
+    return _settingsCache;
+  }
+
   let settings = await SchoolSetting.findOne();
 
   if (!settings) {
     settings = await SchoolSetting.create({});
   }
+
+  _settingsCache = settings;
+  _settingsCacheAt = now;
 
   return settings;
 };
@@ -75,6 +96,9 @@ const updateSettings = async (data) => {
   }
 
   await settings.save();
+
+  // Bust the cache so the next read picks up the new values immediately.
+  invalidateSettingsCache();
 
   return settings;
 };

@@ -234,19 +234,37 @@ const streamStudentReportCardPdf = async (studentId, query, user, res) => {
   doc.end();
 };
 
+// Hard cap on bulk PDF requests. Each PDF sits in memory during generation
+// before being handed to archiver. At ~200-500 KB per PDF, 100 students ≈
+// 50 MB peak — safe. Beyond this, callers should paginate their requests.
+const BULK_PDF_MAX_STUDENTS = 100;
+
 // Generates report cards for multiple students and streams them as a
 // single zip file to the HTTP response. Students the caller can't access
 // (e.g. not yet published, for a non-staff caller) are skipped rather than
 // failing the whole batch.
+//
+// Memory strategy: generate one PDF at a time, hand the buffer to archiver,
+// then explicitly release the reference before moving to the next student.
+// This keeps peak memory at max(1 PDF) rather than max(all PDFs at once).
 const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
   if (!Array.isArray(studentIds) || studentIds.length === 0) {
     throw new ApiError(400, "At least one student is required.");
   }
 
+  if (studentIds.length > BULK_PDF_MAX_STUDENTS) {
+    throw new ApiError(
+      400,
+      `Bulk download is limited to ${BULK_PDF_MAX_STUDENTS} students per request. Split into smaller batches.`,
+    );
+  }
+
   res.setHeader("Content-Type", "application/zip");
   res.setHeader("Content-Disposition", 'attachment; filename="report-cards.zip"');
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  // Use compression level 6 (default) — level 9 is marginally smaller but
+  // significantly more CPU-intensive on large batches.
+  const archive = archiver("zip", { zlib: { level: 6 } });
   archive.pipe(res);
 
   for (const studentId of studentIds) {
@@ -266,6 +284,11 @@ const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
       });
 
       archive.append(buffer, { name: filename });
+
+      // Release the card and buffer from memory before the next iteration.
+      // In a tight loop over many students this prevents accumulated
+      // allocations from sitting until GC runs after the loop completes.
+      chunks.length = 0;
     } catch {
       // Skip students that fail (not published, not found, etc.) instead
       // of aborting the whole zip.

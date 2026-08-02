@@ -4,12 +4,14 @@ import reportCardController from "../controllers/reportCard.controller.js";
 import { protect, authorize } from "../middlewares/auth.middleware.js";
 import validate from "../middlewares/validation.middleware.js";
 import { setStudentPublishStateValidator } from "../validators/reportCard.validator.js";
+import { heavyReadLimiter } from "../middlewares/rateLimiters.js";
 
 const router = Router();
 
 // GET /report-cards?schoolClass=&session=&term= — admin/teacher list view.
 router.get(
   "/",
+  heavyReadLimiter,
   protect,
   authorize("admin", "teacher"),
   reportCardController.listClassReportCards,
@@ -45,6 +47,7 @@ router.patch(
 // Kept before "/:studentId" so it isn't swallowed by the param route.
 router.post(
   "/bulk-download",
+  heavyReadLimiter,
   protect,
   reportCardController.downloadBulkReportCards,
 );
@@ -52,6 +55,7 @@ router.post(
 // GET /report-cards/:studentId/download — single PDF.
 router.get(
   "/:studentId/download",
+  heavyReadLimiter,
   protect,
   reportCardController.downloadStudentReportCard,
 );
@@ -59,6 +63,6 @@ router.get(
 // GET /report-cards/:studentId — staff (any time) or the
 // student/parent themselves (only once published). Kept last so it
 // doesn't swallow the more specific routes above.
-router.get("/:studentId", protect, reportCardController.getStudentReportCard);
+router.get("/:studentId", heavyReadLimiter, protect, reportCardController.getStudentReportCard);
 
 export default router;

@@ -3,6 +3,7 @@ import Term from "../models/Term.js";
 import Enrollment from "../models/Enrollment.js";
 
 import ApiError from "../utils/ApiError.js";
+import { invalidateAcademicContextCache } from "../utils/academicContext.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 
 const createTerm = async (data) => {
@@ -102,6 +103,11 @@ const updateTerm = async (termId, data) => {
   }
 
   await term.save();
+
+  // Bust the academic context cache whenever isCurrent changes on a term.
+  if (data.isCurrent !== undefined) {
+    invalidateAcademicContextCache();
+  }
 
   return await Term.findById(term._id).populate("session", "name");
 };

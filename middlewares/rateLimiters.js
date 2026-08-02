@@ -3,6 +3,7 @@ import {
   authRateLimiter,
   loginRateLimiter,
   passwordChangeRateLimiter,
+  heavyReadLimiter,
 } from "../config/rateLimiters.js";
 
 export {
@@ -10,4 +11,5 @@ export {
   authRateLimiter,
   loginRateLimiter,
   passwordChangeRateLimiter,
+  heavyReadLimiter,
 };
