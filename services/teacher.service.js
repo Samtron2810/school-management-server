@@ -4,6 +4,9 @@ import Teacher from "../models/Teacher.js";
 import ApiError from "../utils/ApiError.js";
 import withTransaction from "../utils/withTransaction.js";
 import settingService from "./setting.service.js";
+import { cacheDel } from "../config/redis.js";
+
+const bustDashboard = () => cacheDel("dashboard:admin:summary");
 
 const createTeacher = async (data) => {
   // Auto-generate the teacher ID from school settings when not supplied
@@ -65,6 +68,7 @@ const createTeacher = async (data) => {
       { session },
     );
 
+    await bustDashboard();
     return teacher;
   });
 };
@@ -163,9 +167,11 @@ const updateTeacher = async (teacherDocId, data) => {
     await user.save({ session });
     await teacher.save({ session });
 
-    return await Teacher.findById(teacher._id)
+    const updated = await Teacher.findById(teacher._id)
       .populate("user", "-password -refreshToken -__v")
       .session(session);
+    await bustDashboard();
+    return updated;
   });
 };
 

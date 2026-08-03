@@ -19,12 +19,12 @@ const env = {
 
   MONGO_URI: process.env.MONGO_URI,
 
+  REDIS_URL: process.env.REDIS_URL || null,
+
   CLIENT_ORIGINS: parseOrigins(process.env.CLIENT_ORIGINS),
 
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
-
   CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
-
   CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
 
   ACCESS_TOKEN_SECRET: process.env.ACCESS_TOKEN_SECRET,
@@ -55,8 +55,11 @@ export const validateRequiredEnv = () => {
       "Missing required environment variables:\n" +
         missing.map((key) => `- ${key}`).join("\n"),
     );
-
     process.exit(1);
+  }
+
+  if (!process.env.REDIS_URL) {
+    console.warn("[Env] REDIS_URL not set — Redis caching will be disabled.");
   }
 };
 

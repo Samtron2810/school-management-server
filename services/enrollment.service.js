@@ -6,6 +6,9 @@ import SchoolClass from "../models/SchoolClass.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import withTransaction from "../utils/withTransaction.js";
+import { cacheDel } from "../config/redis.js";
+
+const bustDashboard = () => cacheDel("dashboard:admin:summary");
 
 const createEnrollment = async (data) => {
   const student = await Student.findById(data.student);
@@ -46,7 +49,7 @@ const createEnrollment = async (data) => {
     );
   }
 
-  return await Enrollment.create({
+  const enrollment = await Enrollment.create({
     student: student._id,
     session: currentSession._id,
     term: currentTerm._id,
@@ -54,6 +57,8 @@ const createEnrollment = async (data) => {
     rollNumber: data.rollNumber,
     enrollmentNumber: data.enrollmentNumber,
   });
+  await bustDashboard();
+  return enrollment;
 };
 
 // Enroll many students into one class at once. All-or-nothing: if any
@@ -65,7 +70,7 @@ const bulkCreateEnrollments = async (data) => {
     throw new ApiError(400, "At least one student is required.");
   }
 
-  return await withTransaction(async (session) => {
+  const result = await withTransaction(async (session) => {
     const schoolClass = await SchoolClass.findById(data.schoolClass).session(
       session,
     );
@@ -126,6 +131,8 @@ const bulkCreateEnrollments = async (data) => {
 
     return created;
   });
+  await bustDashboard();
+  return result;
 };
 
 const populateEnrollment = (query) =>
@@ -192,6 +199,7 @@ const deleteEnrollment = async (enrollmentId) => {
   );
 
   await enrollment.deleteOne();
+  await bustDashboard();
 };
 
 export default {

@@ -1,40 +1,26 @@
 import SchoolSetting from "../models/SchoolSetting.js";
 import ApiError from "../utils/ApiError.js";
+import { cacheGet, cacheSet, cacheDel } from "../config/redis.js";
 
-// Simple in-process cache for the settings singleton.
-// SchoolSettings almost never changes — it's admin-only and updated
-// infrequently. Caching for 60 s eliminates the most common DB hotspot:
-// every mark-entry, grading, and PDF request was hitting SchoolSetting.findOne().
-let _settingsCache = null;
-let _settingsCacheAt = 0;
-const SETTINGS_TTL_MS = 60_000; // 60 seconds
+const CACHE_KEY = "school:settings";
+const CACHE_TTL = 300; // 5 minutes
 
-const invalidateSettingsCache = () => {
-  _settingsCache = null;
-  _settingsCacheAt = 0;
-};
-
-// Returns the singleton settings document, creating it on first use.
 const getSettings = async () => {
-  const now = Date.now();
-  if (_settingsCache && now - _settingsCacheAt < SETTINGS_TTL_MS) {
-    return _settingsCache;
-  }
+  const cached = await cacheGet(CACHE_KEY);
+  if (cached) return cached;
 
   let settings = await SchoolSetting.findOne();
+  if (!settings) settings = await SchoolSetting.create({});
 
-  if (!settings) {
-    settings = await SchoolSetting.create({});
-  }
-
-  _settingsCache = settings;
-  _settingsCacheAt = now;
+  await cacheSet(CACHE_KEY, settings.toObject(), CACHE_TTL);
 
   return settings;
 };
 
 const updateSettings = async (data) => {
-  const settings = await getSettings();
+  // Always fetch live doc for mutation
+  let settings = await SchoolSetting.findOne();
+  if (!settings) settings = await SchoolSetting.create({});
 
   if (data.schoolName !== undefined) settings.schoolName = data.schoolName;
   if (data.address !== undefined) settings.address = data.address;
@@ -51,8 +37,6 @@ const updateSettings = async (data) => {
     }));
   }
 
-  // Global mark-entry columns (CA 1, CA 2, Test, Exam, etc). Shared by
-  // every class and subject school-wide — see models/SchoolSetting.js.
   if (Array.isArray(data.scoreComponents) && data.scoreComponents.length > 0) {
     const seenKeys = new Set();
     for (const component of data.scoreComponents) {
@@ -81,7 +65,6 @@ const updateSettings = async (data) => {
     settings.passingScore = Number(data.passingScore);
   }
 
-  // Only prefix/padding are configurable — the counter is server-owned.
   for (const kind of ["teacher", "student", "parent"]) {
     const incoming = data.idFormats?.[kind];
     if (!incoming) continue;
@@ -97,14 +80,12 @@ const updateSettings = async (data) => {
 
   await settings.save();
 
-  // Bust the cache so the next read picks up the new values immediately.
-  invalidateSettingsCache();
+  // Bust cache so next read is fresh
+  await cacheDel(CACHE_KEY);
 
   return settings;
 };
 
-// Atomically issues the next ID for a kind ("teacher" | "student" | "parent"),
-// e.g. "TCH-0001". Safe under concurrency (single $inc on the singleton).
 const generateId = async (kind) => {
   const settings = await getSettings();
 
@@ -113,6 +94,9 @@ const generateId = async (kind) => {
     { $inc: { [`idFormats.${kind}.counter`]: 1 } },
     { new: true },
   );
+
+  // Bust cache since counter changed
+  await cacheDel(CACHE_KEY);
 
   const format = updated.idFormats[kind];
   const number = String(format.counter).padStart(format.padding, "0");

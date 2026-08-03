@@ -5,6 +5,7 @@ import compression from "compression";
 import morgan from "morgan";
 import env, { validateRequiredEnv } from "./config/env.js";
 import connectDB from "./config/db.js";
+import { connectRedis } from "./config/redis.js";
 
 import cookieParser from "cookie-parser";
 
@@ -22,12 +23,14 @@ validateRequiredEnv();
 // Connect Database
 await connectDB();
 
+// Connect Redis (non-fatal — app runs fine without it)
+connectRedis();
+
 // Built-in Middleware
 app.use(helmet());
 app.use(compression());
 
-// HTTP request logging — dev only, to avoid noisy/duplicate logs in production
-// (most hosts already log requests at the platform level).
+// HTTP request logging — dev only
 if (env.NODE_ENV !== "production") {
   app.use(morgan("dev"));
 }
@@ -71,14 +74,11 @@ app.listen(env.PORT, () => {
   console.log(`Server running on http://localhost:${env.PORT}`);
 });
 
-// Catch synchronous throws that escape all middleware and async handlers.
-// Without this, Node prints the error and terminates the process silently.
 process.on("uncaughtException", (err) => {
   console.error("[uncaughtException]", err);
   process.exit(1);
 });
 
-// Catch promise rejections that were never .catch()'d anywhere in the app.
 process.on("unhandledRejection", (reason) => {
   console.error("[unhandledRejection]", reason);
   process.exit(1);

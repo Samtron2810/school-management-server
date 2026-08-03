@@ -17,62 +17,38 @@ import Subject from "../models/Subject.js";
 import ApiError from "../utils/ApiError.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import ParentStudent from "../models/ParentStudent.js";
+import { cacheGet, cacheSet } from "../config/redis.js";
+
+const SUMMARY_TTL = 120;  // 2 min — counts change with every enrollment/student write
+const CHART_TTL   = 300;  // 5 min — grade/attendance distributions are slower to shift
 
 const getStudentProfile = async (userId) => {
-  const student = await Student.findOne({
-    user: userId,
-    isActive: true,
-  });
-
-  if (!student) {
-    throw new ApiError(404, "Student profile not found.");
-  }
-
+  const student = await Student.findOne({ user: userId, isActive: true });
+  if (!student) throw new ApiError(404, "Student profile not found.");
   return student;
 };
 
 const getTeacherProfile = async (userId) => {
-  const teacher = await Teacher.findOne({
-    user: userId,
-    isActive: true,
-  });
-
-  if (!teacher) {
-    throw new ApiError(404, "Teacher profile not found.");
-  }
-
+  const teacher = await Teacher.findOne({ user: userId, isActive: true });
+  if (!teacher) throw new ApiError(404, "Teacher profile not found.");
   return teacher;
 };
 
 const getParentProfile = async (userId) => {
-  const parent = await Parent.findOne({
-    user: userId,
-    isActive: true,
-  });
-
-  if (!parent) {
-    throw new ApiError(404, "Parent profile not found.");
-  }
-
+  const parent = await Parent.findOne({ user: userId, isActive: true });
+  if (!parent) throw new ApiError(404, "Parent profile not found.");
   return parent;
 };
 
 const getBaseSummary = async () => {
+  const CACHE_KEY = "dashboard:admin:summary";
+  const cached = await cacheGet(CACHE_KEY);
+  if (cached) return cached;
+
   const [
-    users,
-    students,
-    teachers,
-    parents,
-    enrollments,
-    assessments,
-    attempts,
-    results,
-    announcements,
-    attendance,
-    classes,
-    subjects,
-    classSubjects,
-    assignments,
+    users, students, teachers, parents, enrollments, assessments,
+    attempts, results, announcements, attendance, classes, subjects,
+    classSubjects, assignments,
   ] = await Promise.all([
     User.countDocuments({ isActive: true }),
     Student.countDocuments({ isActive: true }),
@@ -90,232 +66,101 @@ const getBaseSummary = async () => {
     TeacherAssignment.countDocuments({ isActive: true }),
   ]);
 
-  return {
-    users,
-    students,
-    teachers,
-    parents,
-    enrollments,
-    assessments,
-    attempts,
-    results,
-    announcements,
-    attendance,
-    classes,
-    subjects,
-    classSubjects,
-    assignments,
+  const summary = {
+    users, students, teachers, parents, enrollments, assessments,
+    attempts, results, announcements, attendance, classes, subjects,
+    classSubjects, assignments,
   };
+
+  await cacheSet(CACHE_KEY, summary, SUMMARY_TTL);
+  return summary;
 };
 
 const getRecentActivity = async (user) => {
   const [announcements, results, attempts, assessments] = await Promise.all([
     announcementService.getAnnouncements(user).then((list) => list.slice(0, 3)),
-    Result.find({
-      isActive: true,
-    })
-      .populate({
-        path: "student",
-        populate: {
-          path: "user",
-          select: "firstName lastName otherName username",
-        },
-      })
-      .populate({
-        path: "classSubject",
-        populate: {
-          path: "subject",
-          select: "name code",
-        },
-      })
-      .sort({
-        createdAt: -1,
-      })
-      .limit(3)
-      .lean(),
-    StudentAttempt.find({
-      isActive: true,
-    })
-      .populate({
-        path: "student",
-        populate: {
-          path: "user",
-          select: "firstName lastName otherName username",
-        },
-      })
+    Result.find({ isActive: true })
+      .populate({ path: "student", populate: { path: "user", select: "firstName lastName otherName username" } })
+      .populate({ path: "classSubject", populate: { path: "subject", select: "name code" } })
+      .sort({ createdAt: -1 }).limit(3).lean(),
+    StudentAttempt.find({ isActive: true })
+      .populate({ path: "student", populate: { path: "user", select: "firstName lastName otherName username" } })
       .populate("assessment")
-      .sort({
-        createdAt: -1,
-      })
-      .limit(3)
-      .lean(),
-    Assessment.find({
-      isActive: true,
-    })
-      .sort({
-        createdAt: -1,
-      })
-      .limit(3)
-      .lean(),
+      .sort({ createdAt: -1 }).limit(3).lean(),
+    Assessment.find({ isActive: true }).sort({ createdAt: -1 }).limit(3).lean(),
   ]);
 
-  return {
-    announcements,
-    results,
-    attempts,
-    assessments,
-  };
+  return { announcements, results, attempts, assessments };
 };
 
 const getChartData = async () => {
-  const results = await Result.find({
-    isActive: true,
-  })
-    .select("grade percentage createdAt")
-    .lean();
+  const CACHE_KEY = "dashboard:admin:chart";
+  const cached = await cacheGet(CACHE_KEY);
+  if (cached) return cached;
 
-  const attendance = await Attendance.find({
-    isActive: true,
-  })
-    .select("status createdAt")
-    .lean();
-
-  const announcementStats = await Announcement.aggregate([
-    {
-      $match: {
-        isActive: true,
-      },
-    },
-    {
-      $group: {
-        _id: "$priority",
-        count: {
-          $sum: 1,
-        },
-      },
-    },
+  const [results, attendance, announcementStats] = await Promise.all([
+    Result.find({ isActive: true }).select("grade percentage createdAt").lean(),
+    Attendance.find({ isActive: true }).select("status createdAt").lean(),
+    Announcement.aggregate([
+      { $match: { isActive: true } },
+      { $group: { _id: "$priority", count: { $sum: 1 } } },
+    ]),
   ]);
 
   const gradeDistribution = results.reduce(
-    (accumulator, item) => {
-      const grade = item.grade || "F";
-      accumulator[grade] = (accumulator[grade] || 0) + 1;
-      return accumulator;
-    },
-    {
-      A: 0,
-      B: 0,
-      C: 0,
-      D: 0,
-      E: 0,
-      F: 0,
-    },
+    (acc, item) => { const g = item.grade || "F"; acc[g] = (acc[g] || 0) + 1; return acc; },
+    { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 },
   );
 
   const attendanceDistribution = attendance.reduce(
-    (accumulator, item) => {
-      accumulator[item.status] = (accumulator[item.status] || 0) + 1;
-      return accumulator;
-    },
-    {
-      Present: 0,
-      Absent: 0,
-      Late: 0,
-      Excused: 0,
-    },
+    (acc, item) => { acc[item.status] = (acc[item.status] || 0) + 1; return acc; },
+    { Present: 0, Absent: 0, Late: 0, Excused: 0 },
   );
 
-  return {
+  const chart = {
     gradeDistribution,
     attendanceDistribution,
     announcementDistribution: announcementStats.reduce(
-      (accumulator, item) => {
-        accumulator[item._id] = item.count;
-        return accumulator;
-      },
-      {
-        Low: 0,
-        Normal: 0,
-        High: 0,
-        Urgent: 0,
-      },
+      (acc, item) => { acc[item._id] = item.count; return acc; },
+      { Low: 0, Normal: 0, High: 0, Urgent: 0 },
     ),
   };
+
+  await cacheSet(CACHE_KEY, chart, CHART_TTL);
+  return chart;
 };
 
 const getRoleSpecificSummary = async (user) => {
-  if (user.role === "admin") {
-    return await getBaseSummary();
-  }
+  if (user.role === "admin") return await getBaseSummary();
 
   if (user.role === "teacher") {
     const teacher = await getTeacherProfile(user._id);
-    const teacherAssignments = await TeacherAssignment.countDocuments({
-      teacher: teacher._id,
-      isActive: true,
-    });
-
-    const assessments = await Assessment.countDocuments({
-      teacher: teacher._id,
-      isActive: true,
-    });
-
-    const results = await Result.countDocuments({
-      teacher: teacher._id,
-      isActive: true,
-    });
-
-    const attempts = await StudentAttempt.countDocuments({
-      isActive: true,
-    });
-
-    return {
-      teacherAssignments,
-      assessments,
-      results,
-      attempts,
-    };
+    const [teacherAssignments, assessments, results, attempts] = await Promise.all([
+      TeacherAssignment.countDocuments({ teacher: teacher._id, isActive: true }),
+      Assessment.countDocuments({ teacher: teacher._id, isActive: true }),
+      Result.countDocuments({ teacher: teacher._id, isActive: true }),
+      StudentAttempt.countDocuments({ isActive: true }),
+    ]);
+    return { teacherAssignments, assessments, results, attempts };
   }
 
   if (user.role === "student") {
     const student = await getStudentProfile(user._id);
     const { session, term } = await getCurrentAcademicContext();
-    const enrollment = await Enrollment.findOne({
-      student: student._id,
-      session: session._id,
-      term: term._id,
-      status: "Active",
-    }).populate("schoolClass");
-
-    const results = await Result.countDocuments({
-      student: student._id,
-      session: session._id,
-      term: term._id,
-      isActive: true,
-    });
-
-    const attempts = await StudentAttempt.countDocuments({
-      student: student._id,
-      isActive: true,
-    });
-
-    return {
-      enrollment,
-      results,
-      attempts,
-    };
+    const [enrollment, results, attempts] = await Promise.all([
+      Enrollment.findOne({
+        student: student._id, session: session._id, term: term._id, status: "Active",
+      }).populate("schoolClass"),
+      Result.countDocuments({ student: student._id, session: session._id, term: term._id, isActive: true }),
+      StudentAttempt.countDocuments({ student: student._id, isActive: true }),
+    ]);
+    return { enrollment, results, attempts };
   }
 
   if (user.role === "parent") {
     const parent = await getParentProfile(user._id);
-    const children = await ParentStudent.countDocuments({
-      parent: parent._id,
-      isActive: true,
-    });
-
-    return {
-      children,
-    };
+    const children = await ParentStudent.countDocuments({ parent: parent._id, isActive: true });
+    return { children };
   }
 
   return {};
@@ -331,15 +176,12 @@ const getDashboard = async (user) => {
 
   return {
     context,
-    summary:
-      user.role === "admin"
-        ? { ...(await getBaseSummary()), ...roleSummary }
-        : roleSummary,
+    summary: user.role === "admin"
+      ? { ...(await getBaseSummary()), ...roleSummary }
+      : roleSummary,
     recentActivity,
     chartData,
   };
 };
 
-export default {
-  getDashboard,
-};
+export default { getDashboard };

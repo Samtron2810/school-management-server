@@ -4,6 +4,9 @@ import Student from "../models/Student.js";
 import ApiError from "../utils/ApiError.js";
 import withTransaction from "../utils/withTransaction.js";
 import settingService from "./setting.service.js";
+import { cacheDel } from "../config/redis.js";
+
+const bustDashboard = () => cacheDel("dashboard:admin:summary");
 
 const createStudent = async (data) => {
   // Auto-generate the admission number when not supplied.
@@ -67,6 +70,7 @@ const createStudent = async (data) => {
       { session },
     );
 
+    await bustDashboard();
     return student;
   });
 };
@@ -167,9 +171,11 @@ const updateStudent = async (studentDocId, data) => {
     await user.save({ session });
     await student.save({ session });
 
-    return await Student.findById(student._id)
+    const updated = await Student.findById(student._id)
       .populate("user", "-password -refreshToken -__v")
       .session(session);
+    await bustDashboard();
+    return updated;
   });
 };
 
