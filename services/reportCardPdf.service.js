@@ -100,7 +100,7 @@ const drawReportCard = async (doc, card) => {
   const schoolPhone = settings?.phoneNumber || "";
 
   const logoSize = 70; // square px
-  const logoRightGutter = 16;
+  const logoRightGutter = 12;
   const profileX = pageLeft + (logoUrl ? logoSize + logoRightGutter : 0);
   const profileWidth =
     contentWidth - (logoUrl ? logoSize + logoRightGutter : 0);
@@ -115,7 +115,7 @@ const drawReportCard = async (doc, card) => {
         const arrayBuffer = await res.arrayBuffer();
         const imgBuffer = Buffer.from(arrayBuffer);
         doc.image(imgBuffer, pageLeft, y, {
-          width: logoSize,
+          width: logoSize + 10,
           height: logoSize,
         });
       }
@@ -130,7 +130,7 @@ const drawReportCard = async (doc, card) => {
   const letterheadY = y;
   doc
     .font("Helvetica-Bold")
-    .fontSize(25)
+    .fontSize(22)
     .text(schoolName, profileX, letterheadY, {
       width: profileWidth,
       align: "center",
