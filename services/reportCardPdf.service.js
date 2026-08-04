@@ -99,8 +99,8 @@ const drawReportCard = async (doc, card) => {
   const schoolEmail = settings?.email || "";
   const schoolPhone = settings?.phoneNumber || "";
 
-  const logoSize = 60; // square px
-  const logoRightGutter = 14;
+  const logoSize = 70; // square px
+  const logoRightGutter = 16;
   const profileX = pageLeft + (logoUrl ? logoSize + logoRightGutter : 0);
   const profileWidth =
     contentWidth - (logoUrl ? logoSize + logoRightGutter : 0);
@@ -125,43 +125,39 @@ const drawReportCard = async (doc, card) => {
   }
 
   // School name, address, contact — centred in the space beside the logo.
+  // Sized up for a standard letterhead look (school name doubled from 15
+  // to 30, address/contact doubled from 9 to 18).
   const letterheadY = y;
   doc
     .font("Helvetica-Bold")
-    .fontSize(15)
+    .fontSize(25)
     .text(schoolName, profileX, letterheadY, {
       width: profileWidth,
       align: "center",
     });
-  let profileY = letterheadY + 20;
+  let profileY = letterheadY + 30;
 
   if (schoolAddress) {
-    doc
-      .font("Helvetica")
-      .fontSize(9)
-      .text(schoolAddress, profileX, profileY, {
-        width: profileWidth,
-        align: "center",
-      });
-    profileY += 13;
+    doc.font("Helvetica").fontSize(12).text(schoolAddress, profileX, profileY, {
+      width: profileWidth,
+      align: "center",
+    });
+    profileY += 20;
   }
 
   const contactParts = [schoolEmail, schoolPhone]
     .filter(Boolean)
     .join("   |   ");
   if (contactParts) {
-    doc
-      .font("Helvetica")
-      .fontSize(9)
-      .text(contactParts, profileX, profileY, {
-        width: profileWidth,
-        align: "center",
-      });
-    profileY += 13;
+    doc.font("Helvetica").fontSize(12).text(contactParts, profileX, profileY, {
+      width: profileWidth,
+      align: "center",
+    });
+    profileY += 20;
   }
 
   // Advance y past whichever was taller — logo or profile block.
-  y = Math.max(y + logoSize, profileY) + 10;
+  y = Math.max(y + logoSize, profileY) + 4;
 
   // Divider line under letterhead.
   ensureSpace(8);
@@ -171,29 +167,40 @@ const drawReportCard = async (doc, card) => {
     .strokeColor("#333333")
     .lineWidth(1)
     .stroke();
-  y += 14;
+  y += 10;
 
   // ── Report Card title + period ───────────────────────────────────────────
   writeLine("Student Report Card", {
     fontSize: 14,
     bold: true,
     align: "center",
-    gapAfter: 10,
+    gapAfter: 22,
   });
   writeLine(`${card.session?.name || ""} — ${card.term?.name || ""}`, {
     fontSize: 10,
     align: "center",
-    gapAfter: 18,
+    gapAfter: 20,
   });
 
-  // ── Student info (bold) ──────────────────────────────────────────────────
-  writeLine(`Name: ${studentName}`, { fontSize: 11, bold: true, gapAfter: 14 });
-  writeLine(`Admission No: ${card.student?.admissionNumber || "—"}`, {
-    fontSize: 11,
-    bold: true,
-    gapAfter: 14,
-  });
-  writeLine(`Class: ${className}`, { fontSize: 11, bold: true, gapAfter: 20 });
+  // ── Student info — label bold, value regular ─────────────────────────────
+  // writeLine only supports a single font per call, so label/value pairs
+  // are drawn as two adjacent text() calls sharing the same y.
+  const writeLabelValue = (label, value, { gapAfter = 14 } = {}) => {
+    ensureSpace(gapAfter);
+    const fontSize = 11;
+    doc.font("Helvetica-Bold").fontSize(fontSize);
+    const labelWidth = doc.widthOfString(label);
+    doc.text(label, pageLeft, y, { lineBreak: false });
+    doc
+      .font("Helvetica")
+      .fontSize(fontSize)
+      .text(value, pageLeft + labelWidth, y, { lineBreak: false });
+    y += gapAfter;
+  };
+
+  writeLabelValue("Name: ", studentName);
+  writeLabelValue("Admission No: ", card.student?.admissionNumber || "—");
+  writeLabelValue("Class: ", className, { gapAfter: 20 });
 
   const subjects = card.subjects || [];
 
@@ -270,6 +277,16 @@ const drawReportCard = async (doc, card) => {
     y += lineHeight;
   };
 
+  // Rule above the header row.
+  ensureSpace(6);
+  doc
+    .moveTo(pageLeft, y)
+    .lineTo(pageRight, y)
+    .strokeColor("#cccccc")
+    .lineWidth(0.5)
+    .stroke();
+  y += 6;
+
   drawTableRow(
     columns.map((c) => c.label),
     { bold: true, fontSize: 9 },
@@ -342,7 +359,7 @@ const drawReportCard = async (doc, card) => {
   ensureSpace(80);
   writeLine("Teacher's Comment", { fontSize: 10, bold: true, gapAfter: 8 });
   // Empty box for handwritten comment after printing.
-  const boxHeight = 50;
+  const boxHeight = 25;
   doc
     .rect(pageLeft, y, contentWidth, boxHeight)
     .strokeColor("#aaaaaa")
