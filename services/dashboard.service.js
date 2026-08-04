@@ -17,10 +17,21 @@ import Subject from "../models/Subject.js";
 import ApiError from "../utils/ApiError.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import ParentStudent from "../models/ParentStudent.js";
-import { cacheGet, cacheSet } from "../config/redis.js";
+import { cacheGet, cacheSet, cacheDel } from "../config/redis.js";
 
 const SUMMARY_TTL = 120;  // 2 min — counts change with every enrollment/student write
 const CHART_TTL   = 300;  // 5 min — grade/attendance distributions are slower to shift
+
+const SUMMARY_CACHE_KEY = "dashboard:admin:summary";
+const CHART_CACHE_KEY   = "dashboard:admin:chart";
+
+// Single source of truth for both dashboard cache keys, so every writer
+// (enrollment, student, teacher, result, attendance services) busts both
+// caches through one call instead of duplicating key strings and risking
+// one of them being missed — which is exactly how the chart cache ended up
+// never being invalidated before this fix.
+export const bustDashboardCache = () =>
+  Promise.all([cacheDel(SUMMARY_CACHE_KEY), cacheDel(CHART_CACHE_KEY)]);
 
 const getStudentProfile = async (userId) => {
   const student = await Student.findOne({ user: userId, isActive: true });
@@ -41,7 +52,7 @@ const getParentProfile = async (userId) => {
 };
 
 const getBaseSummary = async () => {
-  const CACHE_KEY = "dashboard:admin:summary";
+  const CACHE_KEY = SUMMARY_CACHE_KEY;
   const cached = await cacheGet(CACHE_KEY);
   if (cached) return cached;
 
@@ -94,7 +105,7 @@ const getRecentActivity = async (user) => {
 };
 
 const getChartData = async () => {
-  const CACHE_KEY = "dashboard:admin:chart";
+  const CACHE_KEY = CHART_CACHE_KEY;
   const cached = await cacheGet(CACHE_KEY);
   if (cached) return cached;
 

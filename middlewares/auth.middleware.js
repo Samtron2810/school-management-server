@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import env from "../config/env.js";
-import { cacheGet, getRedis } from "../config/redis.js";
+import { getRedis } from "../config/redis.js";
 import User from "../models/User.js";
 import ApiError from "../utils/ApiError.js";
 import asyncHandler from "../utils/asyncHandler.js";

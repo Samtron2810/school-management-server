@@ -55,11 +55,31 @@ export const cacheDel = async (...keys) => {
 };
 
 // Delete all keys matching a pattern e.g. "timetable:class:*"
+//
+// Uses SCAN rather than KEYS. KEYS walks the entire keyspace in one shot
+// and blocks Redis's single event loop for the duration — fine on a
+// handful of keys, but it's the wrong primitive for a call sitting on a
+// hot invalidation path (this runs on every timetable write). SCAN walks
+// the same keyspace in small non-blocking batches via a cursor, so other
+// clients/queries aren't stalled while it runs.
 export const cacheDelPattern = async (pattern) => {
   if (!redis) return;
   try {
-    const keys = await redis.keys(pattern);
-    if (keys.length > 0) await redis.del(...keys);
+    let cursor = "0";
+    const matched = [];
+    do {
+      const [nextCursor, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        100,
+      );
+      cursor = nextCursor;
+      matched.push(...keys);
+    } while (cursor !== "0");
+
+    if (matched.length > 0) await redis.del(...matched);
   } catch {
     // silent
   }

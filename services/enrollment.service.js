@@ -6,9 +6,7 @@ import SchoolClass from "../models/SchoolClass.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import withTransaction from "../utils/withTransaction.js";
-import { cacheDel } from "../config/redis.js";
-
-const bustDashboard = () => cacheDel("dashboard:admin:summary");
+import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
 
 const createEnrollment = async (data) => {
   const student = await Student.findById(data.student);

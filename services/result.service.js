@@ -17,6 +17,7 @@ import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import settingService from "./setting.service.js";
+import { bustDashboardCache } from "./dashboard.service.js";
 
 // Fallback used only when school settings can't be loaded.
 const defaultGradeBands = [
@@ -256,6 +257,9 @@ const createResult = async (data, user) => {
   const payload = await buildResultPayload(data);
   const result = await Result.create(payload);
 
+  // A new result shifts the admin chart's grade distribution.
+  await bustDashboardCache();
+
   return result;
 };
 
@@ -285,6 +289,9 @@ const updateResult = async (resultId, data, user) => {
 
   await result.save();
 
+  // Grade (and therefore chart distribution) may have changed.
+  await bustDashboardCache();
+
   return result;
 };
 
@@ -298,6 +305,9 @@ const deleteResult = async (resultId, user) => {
   result.isActive = false;
 
   await result.save();
+
+  // Removing a result from the active set shifts the chart distribution.
+  await bustDashboardCache();
 
   return result;
 };
@@ -629,10 +639,13 @@ const internalCreateFromAttempt = async (attemptId) => {
   if (existing) {
     Object.assign(existing, payload);
     await existing.save();
+    await bustDashboardCache();
     return existing;
   }
 
-  return await Result.create(payload);
+  const created = await Result.create(payload);
+  await bustDashboardCache();
+  return created;
 };
 
 const createFromAttempt = async (attemptId, user) => {

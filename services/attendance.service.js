@@ -12,6 +12,7 @@ import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import { bustDashboardCache } from "./dashboard.service.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -265,6 +266,12 @@ const markAttendance = async (data, user) => {
   }
 
   await Attendance.bulkWrite(operations);
+
+  // Attendance distribution feeds the admin chart — bust it whenever
+  // records actually changed (an empty batch has nothing to invalidate).
+  if (operations.length > 0) {
+    await bustDashboardCache();
+  }
 
   return {
     totalMarked: operations.length,

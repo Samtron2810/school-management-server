@@ -4,9 +4,7 @@ import Student from "../models/Student.js";
 import ApiError from "../utils/ApiError.js";
 import withTransaction from "../utils/withTransaction.js";
 import settingService from "./setting.service.js";
-import { cacheDel } from "../config/redis.js";
-
-const bustDashboard = () => cacheDel("dashboard:admin:summary");
+import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
 
 const createStudent = async (data) => {
   // Auto-generate the admission number when not supplied.
