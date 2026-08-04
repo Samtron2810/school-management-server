@@ -22,7 +22,10 @@ const fallbackScoreComponents = [
 const getGlobalScoreComponents = async () => {
   try {
     const settings = await settingService.getSettings();
-    if (Array.isArray(settings.scoreComponents) && settings.scoreComponents.length > 0) {
+    if (
+      Array.isArray(settings.scoreComponents) &&
+      settings.scoreComponents.length > 0
+    ) {
       return settings.scoreComponents;
     }
   } catch {
@@ -65,31 +68,132 @@ const drawReportCard = async (doc, card) => {
     const {
       fontSize = 11,
       bold = false,
+      italic = false,
+      boldItalic = false,
       align = "left",
       gapAfter = lineHeight,
+      x = pageLeft,
+      width = contentWidth,
     } = options;
     ensureSpace(gapAfter);
-    doc
-      .font(bold ? "Helvetica-Bold" : "Helvetica")
-      .fontSize(fontSize)
-      .text(text, pageLeft, y, { width: contentWidth, align });
+    let font = "Helvetica";
+    if (boldItalic) font = "Helvetica-BoldOblique";
+    else if (bold) font = "Helvetica-Bold";
+    else if (italic) font = "Helvetica-Oblique";
+    doc.font(font).fontSize(fontSize).text(text, x, y, { width, align });
     y += gapAfter;
   };
 
-  // Header.
-  writeLine("Student Report Card", { fontSize: 18, bold: true, align: "center", gapAfter: 24 });
-  writeLine(`${card.session?.name || ""} — ${card.term?.name || ""}`, {
-    fontSize: 11,
+  // ── Letterhead ──────────────────────────────────────────────────────────
+  // Load school settings for logo + profile fields.
+  let settings = null;
+  try {
+    settings = await settingService.getSettings();
+  } catch {
+    // fall through — letterhead will degrade gracefully
+  }
+
+  const logoUrl = settings?.logo?.url || "";
+  const schoolName = settings?.schoolName || "TronSchool";
+  const schoolAddress = settings?.address || "";
+  const schoolEmail = settings?.email || "";
+  const schoolPhone = settings?.phoneNumber || "";
+
+  const logoSize = 60; // square px
+  const logoRightGutter = 14;
+  const profileX = pageLeft + (logoUrl ? logoSize + logoRightGutter : 0);
+  const profileWidth =
+    contentWidth - (logoUrl ? logoSize + logoRightGutter : 0);
+
+  // Draw logo image if a URL is configured. PDFKit supports jpeg/png via
+  // the image() method. A missing or broken URL is caught and silently
+  // skipped so the rest of the letterhead still renders.
+  if (logoUrl) {
+    try {
+      const res = await fetch(logoUrl);
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer();
+        const imgBuffer = Buffer.from(arrayBuffer);
+        doc.image(imgBuffer, pageLeft, y, {
+          width: logoSize,
+          height: logoSize,
+        });
+      }
+    } catch {
+      // URL unreachable or not a supported image — skip logo silently.
+    }
+  }
+
+  // School name, address, contact — centred in the space beside the logo.
+  const letterheadY = y;
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(15)
+    .text(schoolName, profileX, letterheadY, {
+      width: profileWidth,
+      align: "center",
+    });
+  let profileY = letterheadY + 20;
+
+  if (schoolAddress) {
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .text(schoolAddress, profileX, profileY, {
+        width: profileWidth,
+        align: "center",
+      });
+    profileY += 13;
+  }
+
+  const contactParts = [schoolEmail, schoolPhone]
+    .filter(Boolean)
+    .join("   |   ");
+  if (contactParts) {
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .text(contactParts, profileX, profileY, {
+        width: profileWidth,
+        align: "center",
+      });
+    profileY += 13;
+  }
+
+  // Advance y past whichever was taller — logo or profile block.
+  y = Math.max(y + logoSize, profileY) + 10;
+
+  // Divider line under letterhead.
+  ensureSpace(8);
+  doc
+    .moveTo(pageLeft, y)
+    .lineTo(pageRight, y)
+    .strokeColor("#333333")
+    .lineWidth(1)
+    .stroke();
+  y += 14;
+
+  // ── Report Card title + period ───────────────────────────────────────────
+  writeLine("Student Report Card", {
+    fontSize: 14,
+    bold: true,
     align: "center",
-    gapAfter: 20,
+    gapAfter: 10,
+  });
+  writeLine(`${card.session?.name || ""} — ${card.term?.name || ""}`, {
+    fontSize: 10,
+    align: "center",
+    gapAfter: 18,
   });
 
-  writeLine(`Name: ${studentName}`, { fontSize: 12, gapAfter: 16 });
+  // ── Student info (bold) ──────────────────────────────────────────────────
+  writeLine(`Name: ${studentName}`, { fontSize: 11, bold: true, gapAfter: 14 });
   writeLine(`Admission No: ${card.student?.admissionNumber || "—"}`, {
-    fontSize: 12,
-    gapAfter: 16,
+    fontSize: 11,
+    bold: true,
+    gapAfter: 14,
   });
-  writeLine(`Class: ${className}`, { fontSize: 12, gapAfter: 24 });
+  writeLine(`Class: ${className}`, { fontSize: 11, bold: true, gapAfter: 20 });
 
   const subjects = card.subjects || [];
 
@@ -102,42 +206,54 @@ const drawReportCard = async (doc, card) => {
     .filter((c) => c.isActive)
     .map((c) => ({ key: c.key, label: c.label }));
 
-  // Subject score table. Column widths sum to contentWidth so every row —
-  // header and data — lines up under the same fixed grid. Fixed columns
-  // (Subject, Total, %, Grade, Remark) get a set share; the breakdown
-  // columns split the remainder evenly between them.
+  // Subject score table. Column widths sum to contentWidth.
+  // "%" column is removed — merged into "Total" which now shows the
+  // percentage value directly (displayed as a plain number, e.g. 67).
   const fixedColumnShares = {
     subject: 0.18,
-    total: 0.11,
-    percentage: 0.08,
+    total: 0.13, // slightly wider now that % column is gone
     grade: 0.09,
     remark: 0.16,
   };
-  const fixedShareSum = Object.values(fixedColumnShares).reduce((a, b) => a + b, 0);
+  const fixedShareSum = Object.values(fixedColumnShares).reduce(
+    (a, b) => a + b,
+    0,
+  );
   const breakdownShareEach =
     breakdownColumns.length > 0
       ? (1 - fixedShareSum) / breakdownColumns.length
       : 0;
 
   const columns = [
-    { key: "subject", label: "Subject", width: contentWidth * fixedColumnShares.subject },
+    {
+      key: "subject",
+      label: "Subject",
+      width: contentWidth * fixedColumnShares.subject,
+    },
     ...breakdownColumns.map((c) => ({
       key: c.key,
-      // Long labels don't fit a narrow breakdown column without wrapping
-      // or colliding with the next column, so the header shows an
-      // abbreviation here; the full label is still used everywhere else
-      // (Mark Entries UI, school settings, etc). CA 1/CA 2/Test/Exam are
-      // all short enough to never actually need this in practice.
       label: c.label.length > 6 ? `${c.label.slice(0, 5)}.` : c.label,
       width: contentWidth * breakdownShareEach,
     })),
-    { key: "total", label: "Total", width: contentWidth * fixedColumnShares.total },
-    { key: "percentage", label: "%", width: contentWidth * fixedColumnShares.percentage },
-    { key: "grade", label: "Grade", width: contentWidth * fixedColumnShares.grade },
-    { key: "remark", label: "Remark", width: contentWidth * fixedColumnShares.remark },
+    // "Total %" header; data rows show plain percentage number (e.g. 67)
+    {
+      key: "total",
+      label: "Total %",
+      width: contentWidth * fixedColumnShares.total,
+    },
+    {
+      key: "grade",
+      label: "Grade",
+      width: contentWidth * fixedColumnShares.grade,
+    },
+    {
+      key: "remark",
+      label: "Remark",
+      width: contentWidth * fixedColumnShares.remark,
+    },
   ];
 
-  const columnGutter = 6; // px gap reserved at the right edge of each column
+  const columnGutter = 6;
 
   const drawTableRow = (cells, { bold = false, fontSize = 10 } = {}) => {
     ensureSpace(lineHeight + 4);
@@ -178,18 +294,22 @@ const drawReportCard = async (doc, card) => {
       const subjectName = row.classSubject?.subject?.name || "—";
 
       const breakdownValues = breakdownColumns.map((col) => {
-        // row.scores is a Mongoose Map here (these are live documents, not
-        // serialized JSON), so .get(key) is required rather than bracket
-        // access.
-        const value = row.scores?.get ? row.scores.get(col.key) : row.scores?.[col.key];
+        const value = row.scores?.get
+          ? row.scores.get(col.key)
+          : row.scores?.[col.key];
         return value === undefined || value === null ? "—" : String(value);
       });
+
+      // Total % column: show percentage as a plain number (e.g. 67, not 67%)
+      const percentageDisplay =
+        row.percentage !== undefined && row.percentage !== null
+          ? String(row.percentage)
+          : "—";
 
       drawTableRow([
         subjectName,
         ...breakdownValues,
-        String(row.total ?? "—"),
-        `${row.percentage ?? 0}%`,
+        percentageDisplay,
         row.grade || "—",
         row.remark || "—",
       ]);
@@ -198,7 +318,7 @@ const drawReportCard = async (doc, card) => {
 
   y += 20;
 
-  // Summary.
+  // ── Summary ──────────────────────────────────────────────────────────────
   writeLine("Summary", { fontSize: 12, bold: true, gapAfter: 18 });
   writeLine(
     `Total Score: ${card.summary?.totalScore ?? 0} / ${card.summary?.totalMaxMarks ?? 0}`,
@@ -215,12 +335,39 @@ const drawReportCard = async (doc, card) => {
       `(${card.summary?.attendance?.attendancePercentage ?? 0}%)`,
     { fontSize: 10, gapAfter: lineHeight },
   );
+
+  y += 24;
+
+  // ── Teacher's Comment box ────────────────────────────────────────────────
+  ensureSpace(80);
+  writeLine("Teacher's Comment", { fontSize: 10, bold: true, gapAfter: 8 });
+  // Empty box for handwritten comment after printing.
+  const boxHeight = 50;
+  doc
+    .rect(pageLeft, y, contentWidth, boxHeight)
+    .strokeColor("#aaaaaa")
+    .lineWidth(0.75)
+    .stroke();
+  y += boxHeight + 20;
+
+  // ── Sign-off ─────────────────────────────────────────────────────────────
+  ensureSpace(20);
+  writeLine("Signed by the School Management", {
+    fontSize: 10,
+    boldItalic: true,
+    align: "center",
+    gapAfter: lineHeight,
+  });
 };
 
 // Generates a single student's report card PDF and streams it directly to
 // the HTTP response.
 const streamStudentReportCardPdf = async (studentId, query, user, res) => {
-  const card = await reportCardService.getStudentReportCard(studentId, query, user);
+  const card = await reportCardService.getStudentReportCard(
+    studentId,
+    query,
+    user,
+  );
 
   const studentName = card.student?.user?.fullName || "student";
   const filename = `report-card-${studentName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
@@ -260,7 +407,10 @@ const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
   }
 
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", 'attachment; filename="report-cards.zip"');
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="report-cards.zip"',
+  );
 
   // Use compression level 6 (default) — level 9 is marginally smaller but
   // significantly more CPU-intensive on large batches.
@@ -269,7 +419,11 @@ const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
 
   for (const studentId of studentIds) {
     try {
-      const card = await reportCardService.getStudentReportCard(studentId, query, user);
+      const card = await reportCardService.getStudentReportCard(
+        studentId,
+        query,
+        user,
+      );
       const studentName = card.student?.user?.fullName || studentId;
       const filename = `${studentName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
 
@@ -280,7 +434,9 @@ const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
       const buffer = await new Promise((resolve, reject) => {
         doc.on("end", () => resolve(Buffer.concat(chunks)));
         doc.on("error", reject);
-        drawReportCard(doc, card).then(() => doc.end()).catch(reject);
+        drawReportCard(doc, card)
+          .then(() => doc.end())
+          .catch(reject);
       });
 
       archive.append(buffer, { name: filename });
