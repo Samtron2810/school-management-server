@@ -1,5 +1,24 @@
 import { body } from "express-validator";
 
+export const forgotPasswordValidator = [
+  body("email")
+    .trim()
+    .notEmpty()
+    .withMessage("Email is required")
+    .isEmail()
+    .withMessage("A valid email address is required")
+    .normalizeEmail(),
+];
+
+export const resetPasswordValidator = [
+  body("token").trim().notEmpty().withMessage("Reset token is required"),
+
+  body("newPassword")
+    .trim()
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters"),
+];
+
 export const loginValidator = [
   body("identifier")
     .trim()

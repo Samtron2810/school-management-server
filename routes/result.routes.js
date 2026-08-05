@@ -3,19 +3,22 @@ import { Router } from "express";
 import resultController from "../controllers/result.controller.js";
 
 import { protect, authorize } from "../middlewares/auth.middleware.js";
+import { heavyReadLimiter } from "../middlewares/rateLimiters.js";
 
 const router = Router();
 
 router.get("/", protect, resultController.getResults);
-// Bulk: every student in a class (admins/teachers).
+// Bulk: every student in a class (admins/teachers) — throttled.
 router.get(
   "/report-cards",
+  heavyReadLimiter,
   protect,
   authorize("admin", "teacher"),
   resultController.generateClassReportCards,
 );
 router.get(
   "/report-card/:studentId",
+  heavyReadLimiter,
   protect,
   resultController.generateReportCard,
 );

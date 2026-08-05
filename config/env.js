@@ -33,7 +33,11 @@ const env = {
   REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET,
   REFRESH_TOKEN_EXPIRES_IN: process.env.REFRESH_TOKEN_EXPIRES_IN,
 
-  CSRF_SECRET: process.env.CSRF_SECRET || process.env.ACCESS_TOKEN_SECRET,
+  CSRF_SECRET: process.env.CSRF_SECRET,
+
+  BREVO_API_KEY: process.env.BREVO_API_KEY,
+  BREVO_SENDER_NAME: process.env.BREVO_SENDER_NAME,
+  BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL,
 };
 
 export const validateRequiredEnv = () => {
@@ -41,11 +45,14 @@ export const validateRequiredEnv = () => {
     "MONGO_URI",
     "ACCESS_TOKEN_SECRET",
     "REFRESH_TOKEN_SECRET",
+    "CSRF_SECRET",
     "CLOUDINARY_CLOUD_NAME",
     "CLOUDINARY_API_KEY",
     "CLOUDINARY_API_SECRET",
     "ACCESS_TOKEN_EXPIRES_IN",
     "REFRESH_TOKEN_EXPIRES_IN",
+    "BREVO_API_KEY",
+    "BREVO_SENDER_EMAIL",
   ];
 
   const missing = required.filter((key) => !process.env[key]);

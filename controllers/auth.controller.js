@@ -11,6 +11,7 @@ import ApiResponse from "../utils/ApiResponse.js";
 import asyncHandler from "../utils/asyncHandler.js";
 
 import authService from "../services/auth.service.js";
+import passwordResetService from "../services/passwordReset.service.js";
 
 import generateAccessToken from "../utils/generateAccessToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
@@ -34,8 +35,16 @@ const getAccessTokenFromRequest = (req) => {
 };
 
 const setAuthCookies = (res, accessToken, refreshToken) => {
-  res.cookie(ACCESS_TOKEN_COOKIE_NAME, accessToken, getAccessTokenCookieOptions());
-  res.cookie(REFRESH_TOKEN_COOKIE_NAME, refreshToken, getRefreshTokenCookieOptions());
+  res.cookie(
+    ACCESS_TOKEN_COOKIE_NAME,
+    accessToken,
+    getAccessTokenCookieOptions(),
+  );
+  res.cookie(
+    REFRESH_TOKEN_COOKIE_NAME,
+    refreshToken,
+    getRefreshTokenCookieOptions(),
+  );
 };
 
 const clearAuthCookies = (res) => {
@@ -46,8 +55,6 @@ const clearAuthCookies = (res) => {
 };
 
 // Blacklist a token in Redis (primary) with fallback to MongoDB.
-// Redis: SET blacklist:jti 1 EX <remaining_seconds>
-// MongoDB fallback is kept for safety when Redis is unavailable.
 const blacklistAccessToken = async (token, userId) => {
   if (!token) return;
 
@@ -62,13 +69,10 @@ const blacklistAccessToken = async (token, userId) => {
 
     if (ttlSeconds > 0) {
       if (redis) {
-        // Primary: Redis SET with token's remaining TTL
         await cacheSet(`blacklist:${decoded.jti}`, 1, ttlSeconds);
       } else {
-        // Fallback: MongoDB (imported lazily to avoid circular dep issues)
-        const { default: AccessTokenBlacklist } = await import(
-          "../models/AccessTokenBlacklist.js"
-        );
+        const { default: AccessTokenBlacklist } =
+          await import("../models/AccessTokenBlacklist.js");
         await AccessTokenBlacklist.updateOne(
           { jti: decoded.jti },
           {
@@ -105,9 +109,15 @@ const login = asyncHandler(async (req, res) => {
   setAuthCookies(res, accessToken, refreshToken);
   const csrfToken = generateSessionCsrfToken(req, res, refreshToken);
 
-  return res.status(200).json(
-    new ApiResponse(200, "Login successful", { user, accessToken, csrfToken }),
-  );
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, "Login successful", {
+        user,
+        accessToken,
+        csrfToken,
+      }),
+    );
 });
 
 const refreshToken = asyncHandler(async (req, res) => {
@@ -128,7 +138,8 @@ const refreshToken = asyncHandler(async (req, res) => {
 
   const user = await User.findById(decoded.id).select("+refreshToken");
   if (!user) throw new ApiError(401, "User not found.");
-  if (!user.isActive) throw new ApiError(403, "Your account has been deactivated.");
+  if (!user.isActive)
+    throw new ApiError(403, "Your account has been deactivated.");
 
   const tokenVersion = decoded.tokenVersion ?? 0;
   if ((user.tokenVersion ?? 0) !== tokenVersion) {
@@ -155,9 +166,14 @@ const refreshToken = asyncHandler(async (req, res) => {
   setAuthCookies(res, accessToken, newRefreshToken);
   const csrfToken = generateSessionCsrfToken(req, res, newRefreshToken);
 
-  return res.status(200).json(
-    new ApiResponse(200, "Token refreshed successfully", { accessToken, csrfToken }),
-  );
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, "Token refreshed successfully", {
+        accessToken,
+        csrfToken,
+      }),
+    );
 });
 
 const logout = asyncHandler(async (req, res) => {
@@ -166,8 +182,13 @@ const logout = asyncHandler(async (req, res) => {
 
   if (refreshTokenValue) {
     try {
-      const decodedRefresh = jwt.verify(refreshTokenValue, env.REFRESH_TOKEN_SECRET);
-      const user = await User.findById(decodedRefresh.id).select("+refreshToken");
+      const decodedRefresh = jwt.verify(
+        refreshTokenValue,
+        env.REFRESH_TOKEN_SECRET,
+      );
+      const user = await User.findById(decodedRefresh.id).select(
+        "+refreshToken",
+      );
 
       if (user && user.refreshToken) {
         user.refreshToken = undefined;
@@ -200,18 +221,24 @@ const logoutAll = asyncHandler(async (req, res) => {
   await user.save();
 
   clearAuthCookies(res);
-  return res.status(200).json(new ApiResponse(200, "All sessions logged out successfully."));
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "All sessions logged out successfully."));
 });
 
 const getCsrfToken = asyncHandler(async (req, res) => {
   const csrfToken = generateCsrfToken(req, res, { overwrite: true });
-  return res.status(200).json(
-    new ApiResponse(200, "CSRF token generated successfully.", { csrfToken }),
-  );
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, "CSRF token generated successfully.", { csrfToken }),
+    );
 });
 
 const me = asyncHandler(async (req, res) => {
-  return res.status(200).json(new ApiResponse(200, "User fetched successfully", req.user));
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "User fetched successfully", req.user));
 });
 
 const updateMe = asyncHandler(async (req, res) => {
@@ -224,13 +251,17 @@ const updateMe = asyncHandler(async (req, res) => {
   if (req.body.avatarUrl !== undefined) user.avatar.url = req.body.avatarUrl;
 
   await user.save();
-  return res.status(200).json(new ApiResponse(200, "Profile updated successfully.", user));
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Profile updated successfully.", user));
 });
 
 const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
-  const user = await User.findById(req.user._id).select("+password +refreshToken");
+  const user = await User.findById(req.user._id).select(
+    "+password +refreshToken",
+  );
   if (!user) throw new ApiError(404, "User not found.");
 
   const isMatch = await user.comparePassword(currentPassword);
@@ -242,7 +273,30 @@ const changePassword = asyncHandler(async (req, res) => {
   await user.save();
 
   clearAuthCookies(res);
-  return res.status(200).json(new ApiResponse(200, "Password changed successfully."));
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Password changed successfully."));
+});
+
+const forgotPassword = asyncHandler(async (req, res) => {
+  await passwordResetService.forgotPassword({ email: req.body.email });
+  // Always 200 — never reveal whether the email exists
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        "If that email is registered, a reset link has been sent.",
+      ),
+    );
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+  const { token, newPassword } = req.body;
+  await passwordResetService.resetPassword({ token, newPassword });
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Password reset successfully. Please log in."));
 });
 
 export default {
@@ -254,4 +308,6 @@ export default {
   getCsrfToken,
   me,
   changePassword,
+  forgotPassword,
+  resetPassword,
 };

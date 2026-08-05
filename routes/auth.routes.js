@@ -5,6 +5,8 @@ import {
   loginValidator,
   changePasswordValidator,
   updateMeValidator,
+  forgotPasswordValidator,
+  resetPasswordValidator,
 } from "../validators/auth.validator.js";
 import validate from "../middlewares/validation.middleware.js";
 import { protect } from "../middlewares/auth.middleware.js";
@@ -30,12 +32,7 @@ router.post("/refresh-token", csrfProtection, authController.refreshToken);
 
 router.post("/logout", csrfProtection, authController.logout);
 
-router.post(
-  "/logout-all",
-  protect,
-  csrfProtection,
-  authController.logoutAll,
-);
+router.post("/logout-all", protect, csrfProtection, authController.logoutAll);
 
 router.get("/me", protect, authController.me);
 
@@ -56,6 +53,23 @@ router.patch(
   changePasswordValidator,
   validate,
   authController.changePassword,
+);
+
+// Forgot/reset password — public, no CSRF required (no session yet)
+router.post(
+  "/forgot-password",
+  loginRateLimiter,
+  forgotPasswordValidator,
+  validate,
+  authController.forgotPassword,
+);
+
+router.post(
+  "/reset-password",
+  loginRateLimiter,
+  resetPasswordValidator,
+  validate,
+  authController.resetPassword,
 );
 
 export default router;

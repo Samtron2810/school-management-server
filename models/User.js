@@ -97,6 +97,27 @@ const userSchema = new Schema(
       type: Number,
       default: 0,
     },
+
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+
+    lockUntil: {
+      type: Date,
+      select: false,
+    },
+
+    passwordResetToken: {
+      type: String,
+      select: false,
+    },
+
+    passwordResetExpires: {
+      type: Date,
+      select: false,
+    },
   },
   {
     timestamps: true,
@@ -118,6 +139,38 @@ const userSchema = new Schema(
 // userSchema.index({ email: 1 });
 // userSchema.index({ username: 1 });
 userSchema.index({ role: 1 });
+
+userSchema.virtual("isLocked").get(function () {
+  return !!(this.lockUntil && this.lockUntil > Date.now());
+});
+
+userSchema.methods.incrementLoginAttempts = async function () {
+  const MAX_ATTEMPTS = 10;
+  const LOCK_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+
+  // If a previous lock has expired, reset and start fresh
+  if (this.lockUntil && this.lockUntil < Date.now()) {
+    return this.updateOne({
+      $set: { failedLoginAttempts: 1 },
+      $unset: { lockUntil: 1 },
+    });
+  }
+
+  const updates = { $inc: { failedLoginAttempts: 1 } };
+
+  if (this.failedLoginAttempts + 1 >= MAX_ATTEMPTS) {
+    updates.$set = { lockUntil: new Date(Date.now() + LOCK_DURATION_MS) };
+  }
+
+  return this.updateOne(updates);
+};
+
+userSchema.methods.resetLoginAttempts = async function () {
+  return this.updateOne({
+    $set: { failedLoginAttempts: 0 },
+    $unset: { lockUntil: 1 },
+  });
+};
 
 userSchema.virtual("fullName").get(function () {
   return [this.firstName, this.otherName, this.lastName]

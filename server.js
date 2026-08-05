@@ -6,6 +6,7 @@ import morgan from "morgan";
 import env, { validateRequiredEnv } from "./config/env.js";
 import connectDB from "./config/db.js";
 import { connectRedis } from "./config/redis.js";
+import logger from "./config/logger.js";
 
 import cookieParser from "cookie-parser";
 
@@ -27,7 +28,24 @@ await connectDB();
 connectRedis();
 
 // Built-in Middleware
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "res.cloudinary.com"],
+        // Allow the frontend origins to call the API
+        connectSrc: ["'self'", ...env.CLIENT_ORIGINS],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: env.NODE_ENV === "production" ? [] : null,
+      },
+    },
+  }),
+);
 app.use(compression());
 
 // HTTP request logging — dev only
@@ -71,15 +89,19 @@ app.use(errorHandler);
 
 // Start Server
 app.listen(env.PORT, () => {
-  console.log(`Server running on http://localhost:${env.PORT}`);
+  logger.info(`Server running on http://localhost:${env.PORT}`);
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[uncaughtException]", err);
+  logger.error({
+    event: "uncaughtException",
+    error: err.message,
+    stack: err.stack,
+  });
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection]", reason);
+  logger.error({ event: "unhandledRejection", reason });
   process.exit(1);
 });
