@@ -32,12 +32,6 @@ const seedAdmin = async () => {
 
     console.log("Admin account created successfully.");
 
-    console.log({
-      username: admin.username,
-      email: admin.email,
-      password: "Admin@123",
-    });
-
     process.exit(0);
   } catch (error) {
     console.error(error.message);
