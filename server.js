@@ -7,6 +7,8 @@ import env, { validateRequiredEnv } from "./config/env.js";
 import connectDB from "./config/db.js";
 import { connectRedis } from "./config/redis.js";
 import logger from "./config/logger.js";
+import cron from "node-cron";
+import { runRetention } from "./services/retention.service.js";
 
 import cookieParser from "cookie-parser";
 
@@ -92,12 +94,22 @@ app.listen(env.PORT, () => {
   logger.info(`Server running on http://localhost:${env.PORT}`);
 });
 
-process.on("uncaughtException", (err) => {
-  logger.error({
-    event: "uncaughtException",
-    error: err.message,
-    stack: err.stack,
+// Data retention cron — runs daily at 02:00 server time.
+// Policy: soft-deleted accounts purged after 30 days;
+//         student academic records purged 7 years after last session.
+if (env.NODE_ENV === "production") {
+  cron.schedule("0 2 * * *", async () => {
+    try {
+      await runRetention();
+    } catch (err) {
+      logger.error({ type: "retention", event: "cron_error", error: err.message });
+    }
   });
+  logger.info("Data retention cron scheduled (daily 02:00).");
+}
+
+process.on("uncaughtException", (err) => {
+  logger.error({ event: "uncaughtException", error: err.message, stack: err.stack });
   process.exit(1);
 });
 

@@ -29,6 +29,7 @@ import dashboardRoutes from "./dashboard.routes.js";
 import promotionRoutes from "./promotion.routes.js";
 import timetableRoutes from "./timetable.routes.js";
 import notificationRoutes from "./notification.routes.js";
+import adminRoutes from "./admin.routes.js";
 
 const router = Router();
 
@@ -79,5 +80,6 @@ router.use("/dashboard", dashboardRoutes);
 router.use("/promotions", promotionRoutes);
 router.use("/timetables", timetableRoutes);
 router.use("/notifications", notificationRoutes);
+router.use("/admin", adminRoutes);
 
 export default router;
