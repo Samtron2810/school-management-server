@@ -25,7 +25,7 @@ const forgotPassword = async ({ email }) => {
   user.passwordResetExpires = expiresAt;
   await user.save({ validateBeforeSave: false });
 
-  const resetUrl = `${env.CLIENT_ORIGINS[0]}/reset-password?token=${raw}`;
+  const resetUrl = `${env.EMAIL_URL}/reset-password?token=${raw}`;
   const { subject, html } = passwordResetTemplate({
     firstName: user.firstName,
     resetUrl,

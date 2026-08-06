@@ -74,7 +74,6 @@ const login = async ({ identifier, password }) => {
   };
 };
 
-
 import crypto from "crypto";
 import { sendMail } from "../config/mailer.js";
 import { emailVerificationTemplate } from "../utils/emailTemplates.js";
@@ -111,7 +110,8 @@ const resendVerificationEmail = async ({ userId }) => {
   );
 
   if (!user) throw new ApiError(404, "User not found.");
-  if (user.isEmailVerified) throw new ApiError(400, "Email is already verified.");
+  if (user.isEmailVerified)
+    throw new ApiError(400, "Email is already verified.");
 
   const raw = crypto.randomBytes(32).toString("hex");
   const hash = hashToken(raw);
@@ -120,7 +120,7 @@ const resendVerificationEmail = async ({ userId }) => {
   user.emailVerificationExpires = new Date(Date.now() + EMAIL_VERIFY_EXPIRY_MS);
   await user.save({ validateBeforeSave: false });
 
-  const verifyUrl = `${env.CLIENT_ORIGINS[0]}/verify-email?token=${raw}`;
+  const verifyUrl = `${env.EMAIL_URL}/verify-email?token=${raw}`;
   const { subject, html } = emailVerificationTemplate({
     firstName: user.firstName,
     verifyUrl,
@@ -129,10 +129,22 @@ const resendVerificationEmail = async ({ userId }) => {
 
   try {
     await sendMail({ to: user.email, toName: user.firstName, subject, html });
-    logger.info({ type: "auth", event: "verification_email_resent", userId: user._id });
+    logger.info({
+      type: "auth",
+      event: "verification_email_resent",
+      userId: user._id,
+    });
   } catch (err) {
-    logger.error({ type: "auth", event: "verification_email_failed", userId: user._id, error: err.message });
-    throw new ApiError(500, "Failed to send verification email. Please try again.");
+    logger.error({
+      type: "auth",
+      event: "verification_email_failed",
+      userId: user._id,
+      error: err.message,
+    });
+    throw new ApiError(
+      500,
+      "Failed to send verification email. Please try again.",
+    );
   }
 };
 

@@ -23,6 +23,11 @@ const env = {
 
   CLIENT_ORIGINS: parseOrigins(process.env.CLIENT_ORIGINS),
 
+  EMAIL_URL:
+    process.env.EMAIL_URL ||
+    process.env.CLIENT_ORIGINS?.split(",")[0]?.trim() ||
+    "http://localhost:3000",
+
   CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
   CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY,
   CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET,
@@ -53,6 +58,7 @@ export const validateRequiredEnv = () => {
     "REFRESH_TOKEN_EXPIRES_IN",
     "BREVO_API_KEY",
     "BREVO_SENDER_EMAIL",
+    "EMAIL_URL",
   ];
 
   const missing = required.filter((key) => !process.env[key]);
