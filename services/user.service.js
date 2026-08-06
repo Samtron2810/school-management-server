@@ -1,6 +1,20 @@
+import crypto from "crypto";
 import User from "../models/User.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
+import { sendMail } from "../config/mailer.js";
+import { emailVerificationTemplate } from "../utils/emailTemplates.js";
+import env from "../config/env.js";
+import logger from "../config/logger.js";
+
+const EMAIL_VERIFY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const generateVerificationToken = () => {
+  const raw = crypto.randomBytes(32).toString("hex");
+  const hash = crypto.createHash("sha256").update(raw).digest("hex");
+  const expiresAt = new Date(Date.now() + EMAIL_VERIFY_EXPIRY_MS);
+  return { raw, hash, expiresAt };
+};
 
 const createUser = async (data) => {
   const existing = await User.findOne({
@@ -17,11 +31,35 @@ const createUser = async (data) => {
     );
   }
 
-  return await User.create({
+  const { raw, hash, expiresAt } = generateVerificationToken();
+
+  const user = await User.create({
     ...data,
     email: data.email.toLowerCase(),
     username: data.username.toLowerCase(),
+    isEmailVerified: false,
+    emailVerificationToken: hash,
+    emailVerificationExpires: expiresAt,
   });
+
+  // Send verification email — non-blocking: account is created regardless.
+  const verifyUrl = `${env.CLIENT_ORIGINS[0]}/verify-email?token=${raw}`;
+  const { subject, html } = emailVerificationTemplate({
+    firstName: user.firstName,
+    verifyUrl,
+    role: user.role,
+  });
+
+  sendMail({ to: user.email, toName: user.firstName, subject, html }).catch((err) => {
+    logger.error({
+      type: "auth",
+      event: "verification_email_failed",
+      userId: user._id,
+      error: err.message,
+    });
+  });
+
+  return user;
 };
 
 const getUsers = async () => {

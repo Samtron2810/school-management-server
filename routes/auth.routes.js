@@ -32,7 +32,12 @@ router.post("/refresh-token", csrfProtection, authController.refreshToken);
 
 router.post("/logout", csrfProtection, authController.logout);
 
-router.post("/logout-all", protect, csrfProtection, authController.logoutAll);
+router.post(
+  "/logout-all",
+  protect,
+  csrfProtection,
+  authController.logoutAll,
+);
 
 router.get("/me", protect, authController.me);
 
@@ -70,6 +75,16 @@ router.post(
   resetPasswordValidator,
   validate,
   authController.resetPassword,
+);
+
+// Email verification — GET with ?token= (public, link from email)
+router.get("/verify-email", authController.verifyEmail);
+
+// Resend verification email — protected, user must be signed in
+router.post(
+  "/resend-verification",
+  protect,
+  authController.resendVerificationEmail,
 );
 
 export default router;
