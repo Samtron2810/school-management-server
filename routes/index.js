@@ -40,13 +40,26 @@ router.get("/", (req, res) => {
   });
 });
 
-// Apply CSRF protection globally on all mutating requests (POST, PUT, PATCH, DELETE) except /auth/login
+// Public auth endpoints that must work without a session/CSRF cookie.
+// Login is here because the client has no token yet; forgot/reset-password
+// because the user may be fully logged out; resend-verification requires
+// the user to be signed in (protect runs first) but its CSRF token comes
+// from a prior login response — keep it out of this list so the global
+// check still applies to it.
+const CSRF_EXEMPT_PATHS = new Set([
+  "/auth/login",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+]);
+
+// Apply CSRF protection globally on all mutating requests (POST, PUT, PATCH,
+// DELETE) except the paths above that have no session to bind a token to.
 router.use((req, res, next) => {
   const method = req.method.toLowerCase();
   if (["get", "head", "options"].includes(method)) {
     return next();
   }
-  if (req.path === "/auth/login") {
+  if (CSRF_EXEMPT_PATHS.has(req.path)) {
     return next();
   }
   csrfProtection(req, res, next);
