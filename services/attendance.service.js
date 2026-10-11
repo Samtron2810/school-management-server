@@ -13,6 +13,7 @@ import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache } from "./dashboard.service.js";
+import { startOfDayUTC, dayRangeUTC } from "../utils/normalizeDate.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -214,6 +215,8 @@ const markAttendance = async (data, user) => {
   });
 
   const operations = [];
+  const attendanceDate = startOfDayUTC(data.date);
+  const { start: dayStart, end: dayEnd } = dayRangeUTC(data.date);
 
   for (const record of data.records) {
     if (!validStudentIds.has(record.student)) {
@@ -233,7 +236,7 @@ const markAttendance = async (data, user) => {
 
           classSubject: classSubject._id,
 
-          date: new Date(data.date),
+          date: { $gte: dayStart, $lt: dayEnd },
         },
 
         update: {
@@ -250,7 +253,7 @@ const markAttendance = async (data, user) => {
 
             student: student._id,
 
-            date: new Date(data.date),
+            date: attendanceDate,
 
             status: record.status,
 
@@ -265,7 +268,9 @@ const markAttendance = async (data, user) => {
     });
   }
 
-  await Attendance.bulkWrite(operations);
+  if (operations.length > 0) {
+    await Attendance.bulkWrite(operations);
+  }
 
   // Attendance distribution feeds the admin chart — bust it whenever
   // records actually changed (an empty batch has nothing to invalidate).
@@ -297,10 +302,12 @@ const getAttendanceByDate = async (teacherAssignmentId, date, user) => {
 
   const classSubject = await getClassSubject(assignment);
 
+  const { start, end } = dayRangeUTC(date);
+
   return await Attendance.find({
     classSubject: classSubject._id,
 
-    date: new Date(date),
+    date: { $gte: start, $lt: end },
 
     isActive: true,
   })

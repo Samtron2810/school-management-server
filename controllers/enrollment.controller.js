@@ -49,10 +49,17 @@ const updateEnrollment = asyncHandler(async (req, res) => {
 });
 
 const deleteEnrollment = asyncHandler(async (req, res) => {
-  await enrollmentService.deleteEnrollment(req.params.id);
+  const { archived } = await enrollmentService.deleteEnrollment(req.params.id);
   return res
     .status(200)
-    .json(new ApiResponse(200, "Enrollment deleted successfully."));
+    .json(
+      new ApiResponse(
+        200,
+        archived
+          ? "Enrollment has academic records, so it was withdrawn instead of deleted."
+          : "Enrollment deleted successfully.",
+      ),
+    );
 });
 
 export default {

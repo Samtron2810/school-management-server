@@ -7,6 +7,13 @@ import settingService from "./setting.service.js";
 import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
 
 const createStudent = async (data) => {
+  const email = data.email?.trim().toLowerCase();
+  const username = data.username?.trim().toLowerCase();
+
+  if (!email || !username) {
+    throw new ApiError(400, "Email and username are required.");
+  }
+
   // Auto-generate the admission number when not supplied.
   const admissionNumber = data.admissionNumber?.trim()
     ? data.admissionNumber.toUpperCase()
@@ -15,8 +22,8 @@ const createStudent = async (data) => {
   return await withTransaction(async (session) => {
     const existingUser = await User.findOne({
       $or: [
-        { email: data.email.toLowerCase() },
-        { username: data.username.toLowerCase() },
+        { email },
+        { username },
       ],
     }).session(session);
 
@@ -38,8 +45,8 @@ const createStudent = async (data) => {
           firstName: data.firstName,
           lastName: data.lastName,
           otherName: data.otherName,
-          username: data.username.toLowerCase(),
-          email: data.email.toLowerCase(),
+          username,
+          email,
           password: data.password,
           phoneNumber: data.phoneNumber,
           role: "student",

@@ -3,6 +3,9 @@ import Student from "../models/Student.js";
 import Session from "../models/Session.js";
 import Term from "../models/Term.js";
 import SchoolClass from "../models/SchoolClass.js";
+import Attendance from "../models/Attendance.js";
+import Result from "../models/Result.js";
+import SubjectScore from "../models/SubjectScore.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import withTransaction from "../utils/withTransaction.js";
@@ -189,6 +192,9 @@ const updateEnrollment = async (enrollmentId, data) => {
   return await populateEnrollment(Enrollment.findById(enrollment._id));
 };
 
+// Never hard-delete an enrollment that has academic history: attendance,
+// results, scores and attempts would be orphaned and report cards would lose
+// their class. Those enrollments are archived as "Withdrawn" instead.
 const deleteEnrollment = async (enrollmentId) => {
   const enrollment = await findDocumentOrFail(
     Enrollment,
@@ -196,8 +202,30 @@ const deleteEnrollment = async (enrollmentId) => {
     "Enrollment",
   );
 
+  const scope = {
+    student: enrollment.student,
+    session: enrollment.session,
+    term: enrollment.term,
+  };
+
+  const [attendance, result, subjectScore] = await Promise.all([
+    Attendance.exists(scope),
+    Result.exists(scope),
+    SubjectScore.exists(scope),
+  ]);
+
+  const hasHistory = Boolean(attendance || result || subjectScore);
+
+  if (hasHistory) {
+    enrollment.status = "Withdrawn";
+    await enrollment.save();
+    await bustDashboard();
+    return { archived: true };
+  }
+
   await enrollment.deleteOne();
   await bustDashboard();
+  return { archived: false };
 };
 
 export default {

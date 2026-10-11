@@ -10,6 +10,7 @@ import Attendance from "../models/Attendance.js";
 import ClassSubject from "../models/ClassSubject.js";
 import SchoolClass from "../models/SchoolClass.js";
 import Subject from "../models/Subject.js";
+import TeacherAssignment from "../models/TeacherAssignment.js";
 import Session from "../models/Session.js";
 import Term from "../models/Term.js";
 
@@ -249,12 +250,53 @@ const buildResultPayload = async (data) => {
   };
 };
 
+// A teacher may only touch results for classes/subjects they teach.
+// Ownership = they own the result/assessment, or hold an active
+// TeacherAssignment for the result's class + subject.
+const teacherOwnsClassSubject = async (teacher, classSubjectId) => {
+  if (!classSubjectId) return false;
+
+  const classSubject = await ClassSubject.findById(resolveId(classSubjectId));
+  if (!classSubject) return false;
+
+  const assignment = await TeacherAssignment.findOne({
+    teacher: teacher._id,
+    schoolClass: classSubject.schoolClass,
+    subject: classSubject.subject,
+    isActive: true,
+  });
+
+  return Boolean(assignment);
+};
+
+const assertCanMutateResult = async ({ user, teacherId, classSubjectId }) => {
+  if (user.role === "admin") return;
+
+  const teacher = await getTeacherProfile(user._id);
+
+  if (teacherId && extractId(teacherId) === teacher._id.toString()) return;
+
+  if (await teacherOwnsClassSubject(teacher, classSubjectId)) return;
+
+  throw new ApiError(
+    403,
+    "You can only manage results for subjects you teach.",
+  );
+};
+
 const createResult = async (data, user) => {
   if (!["admin", "teacher"].includes(user.role)) {
     throw new ApiError(403, "You are not authorized to create results.");
   }
 
   const payload = await buildResultPayload(data);
+
+  await assertCanMutateResult({
+    user,
+    teacherId: payload.teacher,
+    classSubjectId: payload.classSubject,
+  });
+
   const result = await Result.create(payload);
 
   // A new result shifts the admin chart's grade distribution.
@@ -270,6 +312,12 @@ const updateResult = async (resultId, data, user) => {
 
   const result = await findDocumentOrFail(Result, resultId, "Result");
 
+  await assertCanMutateResult({
+    user,
+    teacherId: result.teacher,
+    classSubjectId: result.classSubject,
+  });
+
   const payload = await buildResultPayload({
     ...result.toObject(),
     ...data,
@@ -283,6 +331,13 @@ const updateResult = async (resultId, data, user) => {
     classSubject: resolveId(data.classSubject ?? result.classSubject),
     session: resolveId(data.session ?? result.session),
     term: resolveId(data.term ?? result.term),
+  });
+
+  // A teacher must not move a result onto a subject they don't teach.
+  await assertCanMutateResult({
+    user,
+    teacherId: payload.teacher,
+    classSubjectId: payload.classSubject,
   });
 
   Object.assign(result, payload);
@@ -301,6 +356,12 @@ const deleteResult = async (resultId, user) => {
   }
 
   const result = await findDocumentOrFail(Result, resultId, "Result");
+
+  await assertCanMutateResult({
+    user,
+    teacherId: result.teacher,
+    classSubjectId: result.classSubject,
+  });
 
   result.isActive = false;
 
@@ -358,16 +419,34 @@ const canAccessResult = async (result, user) => {
   return false;
 };
 
-const applyAccessFilter = async (results, user) => {
-  const visible = [];
-
-  for (const result of results) {
-    if (await canAccessResult(result, user)) {
-      visible.push(result);
-    }
+// Scope the query by role up front: one profile lookup per request,
+// never per result.
+const buildAccessFilter = async (user) => {
+  if (user.role === "admin") {
+    return {};
   }
 
-  return visible;
+  if (user.role === "student") {
+    const student = await getStudentProfile(user._id);
+    return { student: student._id };
+  }
+
+  if (user.role === "teacher") {
+    const teacher = await getTeacherProfile(user._id);
+    return { teacher: teacher._id };
+  }
+
+  if (user.role === "parent") {
+    const parent = await getParentProfile(user._id);
+    const relations = await ParentStudent.find({
+      parent: parent._id,
+      isActive: true,
+    }).select("student");
+
+    return { student: { $in: relations.map((relation) => relation.student) } };
+  }
+
+  return { _id: { $in: [] } };
 };
 
 const getResults = async (query, user) => {
@@ -394,6 +473,26 @@ const getResults = async (query, user) => {
   if (query.classSubject) {
     filter.classSubject = query.classSubject;
   }
+
+  const access = await buildAccessFilter(user);
+
+  // A role-scoped student constraint must win over a client-supplied one
+  // (query.student could otherwise widen a parent's/student's view).
+  if (access.student) {
+    if (filter.student) {
+      const requested = filter.student.toString();
+      const allowed = access.student.$in
+        ? access.student.$in.some((id) => id.toString() === requested)
+        : access.student.toString() === requested;
+
+      if (!allowed) return [];
+    } else {
+      filter.student = access.student;
+    }
+  }
+
+  if (access.teacher) filter.teacher = access.teacher;
+  if (access._id) filter._id = access._id;
 
   const results = await Result.find(filter)
     .populate({
@@ -431,7 +530,7 @@ const getResults = async (query, user) => {
       createdAt: -1,
     });
 
-  return await applyAccessFilter(results, user);
+  return results;
 };
 
 const getResultById = async (resultId, user) => {
@@ -651,6 +750,25 @@ const internalCreateFromAttempt = async (attemptId) => {
 const createFromAttempt = async (attemptId, user) => {
   if (!["admin", "teacher"].includes(user.role)) {
     throw new ApiError(403, "You are not authorized to generate results.");
+  }
+
+  if (user.role === "teacher") {
+    const attempt = await findDocumentOrFail(
+      StudentAttempt,
+      attemptId,
+      "Student Attempt",
+    );
+    const assessment = await Assessment.findById(attempt.assessment);
+
+    if (!assessment) {
+      throw new ApiError(404, "Assessment not found.");
+    }
+
+    await assertCanMutateResult({
+      user,
+      teacherId: assessment.teacher,
+      classSubjectId: assessment.classSubject,
+    });
   }
 
   return await internalCreateFromAttempt(attemptId);

@@ -42,7 +42,13 @@ const getCurrentSourceContext = async (data) => {
   return await getCurrentAcademicContext();
 };
 
-const getSelectedStudents = async (sourceClassId, sourceSessionId, sourceTermId, studentIds) => {
+const getSelectedStudents = async (
+  sourceClassId,
+  sourceSessionId,
+  sourceTermId,
+  studentIds,
+  dbSession = null,
+) => {
   const filter = {
     schoolClass: sourceClassId,
     session: sourceSessionId,
@@ -57,6 +63,7 @@ const getSelectedStudents = async (sourceClassId, sourceSessionId, sourceTermId,
   }
 
   const enrollments = await Enrollment.find(filter)
+    .session(dbSession)
     .populate({
       path: "student",
       populate: {
@@ -118,21 +125,24 @@ const promoteStudents = async (data, user) => {
     ? data.studentIds.map((studentId) => resolveId(studentId))
     : [];
 
-  const enrollments = await getSelectedStudents(
-    sourceClass._id,
-    sourceContext.session._id,
-    sourceContext.term._id,
-    selectedStudentIds,
-  );
-
-  if (enrollments.length === 0) {
-    throw new ApiError(404, "No eligible students found for promotion.");
-  }
-
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
+    // Read inside the transaction so a concurrent edit to these enrollments
+    // causes a write conflict instead of being silently overwritten.
+    const enrollments = await getSelectedStudents(
+      sourceClass._id,
+      sourceContext.session._id,
+      sourceContext.term._id,
+      selectedStudentIds,
+      session,
+    );
+
+    if (enrollments.length === 0) {
+      throw new ApiError(404, "No eligible students found for promotion.");
+    }
+
     const promotionResults = [];
     let promotedCount = 0;
     let skippedCount = 0;

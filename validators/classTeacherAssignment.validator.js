@@ -5,3 +5,9 @@ export const createClassTeacherAssignmentValidator = [
 
   body("schoolClass").notEmpty().withMessage("Class is required"),
 ];
+
+export const updateClassTeacherAssignmentValidator = [
+  body("teacher").optional().isMongoId().withMessage("Invalid teacher"),
+
+  body("isActive").optional().isBoolean(),
+];
