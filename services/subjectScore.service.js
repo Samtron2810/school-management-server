@@ -1,7 +1,5 @@
 import SubjectScore from "../models/SubjectScore.js";
 import ClassSubject from "../models/ClassSubject.js";
-import Enrollment from "../models/Enrollment.js";
-import Student from "../models/Student.js";
 import Session from "../models/Session.js";
 import Term from "../models/Term.js";
 import Teacher from "../models/Teacher.js";
@@ -9,6 +7,7 @@ import TeacherAssignment from "../models/TeacherAssignment.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import { getClassRoster } from "../utils/classRoster.js";
 import settingService from "./setting.service.js";
 
 // Maps Assessment.type -> the global score-component key it should
@@ -90,7 +89,9 @@ const getGradingConfig = async () => {
 // Recompute total/percentage/grade from active components only. A
 // component that's inactive is skipped for totals but its stored score
 // value is left untouched (so re-activating doesn't lose data).
-const computeTotals = async (scoresMap, scoreComponents) => {
+// `gradingConfig` can be passed in so a loop over many rows reads the
+// settings once instead of once per row.
+const computeTotals = async (scoresMap, scoreComponents, gradingConfig = null) => {
   const activeComponents = (scoreComponents || []).filter((c) => c.isActive);
 
   let total = 0;
@@ -106,7 +107,7 @@ const computeTotals = async (scoresMap, scoreComponents) => {
 
   const percentage = totalMaxMarks > 0 ? (total / totalMaxMarks) * 100 : 0;
 
-  const { gradeBands, passingScore } = await getGradingConfig();
+  const { gradeBands, passingScore } = gradingConfig || (await getGradingConfig());
   const band =
     gradeBands.find((entry) => percentage >= entry.min) ?? gradeBands.at(-1);
 
@@ -192,16 +193,18 @@ const getMarkEntryGrid = async (query, user) => {
 
   const scoreComponents = await getGlobalScoreComponents();
 
-  const enrollments = await Enrollment.find({
-    schoolClass: classSubject.schoolClass._id,
-    session: session._id,
-    status: "Active",
-  })
-    .populate({
-      path: "student",
-      populate: { path: "user", select: "firstName lastName otherName username" },
-    })
-    .sort({ rollNumber: 1 });
+  // One row per student for the session, whichever term(s) they were
+  // enrolled in — and still reachable after the class has been promoted.
+  const enrollments = await getClassRoster(
+    classSubject.schoolClass._id,
+    session._id,
+    {
+      populate: {
+        path: "student",
+        populate: { path: "user", select: "firstName lastName otherName username" },
+      },
+    },
+  );
 
   const existingScores = await SubjectScore.find({
     classSubject: classSubject._id,
@@ -275,6 +278,11 @@ const bulkSaveScores = async (data, user) => {
 
   const scoreComponents = await getGlobalScoreComponents();
   const validKeys = new Set(scoreComponents.map((c) => c.key));
+  const gradingConfig = await getGradingConfig();
+
+  // Only students on this class's list for the session may receive scores.
+  const roster = await getClassRoster(classSubject.schoolClass, session._id);
+  const rosterIds = new Set(roster.map((e) => String(e.student)));
 
   const saved = [];
   const failed = [];
@@ -285,7 +293,11 @@ const bulkSaveScores = async (data, user) => {
         throw new ApiError(400, "Student is required for each entry.");
       }
 
-      const student = await findDocumentOrFail(Student, entry.student, "Student");
+      if (!rosterIds.has(String(entry.student))) {
+        throw new ApiError(400, "This student is not enrolled in this class for the session.");
+      }
+
+      const student = { _id: entry.student };
 
       let row = await SubjectScore.findOne({
         student: student._id,
@@ -313,7 +325,7 @@ const bulkSaveScores = async (data, user) => {
         }
         const numeric = Number(value);
         if (Number.isNaN(numeric) || numeric < 0) {
-          throw new ApiError(400, `Invalid score for "${key}" (student ${student._id}).`);
+          throw new ApiError(400, `Invalid score for "${key}".`);
         }
         const component = scoreComponents.find((c) => c.key === key);
         if (component && numeric > component.maxMarks) {
@@ -324,7 +336,7 @@ const bulkSaveScores = async (data, user) => {
         row.sourceAttempts.delete(key);
       }
 
-      const totals = await computeTotals(row.scores, scoreComponents);
+      const totals = await computeTotals(row.scores, scoreComponents, gradingConfig);
       Object.assign(row, totals);
 
       await row.save();
@@ -398,7 +410,33 @@ const applyAttemptScore = async ({
   return row;
 };
 
+// Re-derives total/percentage/grade/passed for every score row of one term
+// from the CURRENT score components, grade bands and pass mark. Stored
+// totals go stale when those settings change; settings.service calls this
+// for the current term only, so closed terms keep the grades they were
+// issued with.
+const recomputeTermScores = async (termId) => {
+  const scoreComponents = await getGlobalScoreComponents();
+  const gradingConfig = await getGradingConfig();
+  const rows = await SubjectScore.find({ term: termId });
+
+  let updated = 0;
+  for (let i = 0; i < rows.length; i += 500) {
+    const ops = [];
+    for (const row of rows.slice(i, i + 500)) {
+      const totals = await computeTotals(row.scores, scoreComponents, gradingConfig);
+      ops.push({ updateOne: { filter: { _id: row._id }, update: { $set: totals } } });
+    }
+    if (ops.length) {
+      await SubjectScore.bulkWrite(ops, { ordered: false });
+      updated += ops.length;
+    }
+  }
+  return updated;
+};
+
 export default {
+  recomputeTermScores,
   getMarkEntryGrid,
   bulkSaveScores,
   applyAttemptScore,

@@ -43,6 +43,16 @@ router.patch(
   reportCardController.setStudentReportCardPublishState,
 );
 
+// POST /report-cards/class/:schoolClassId/download — zip of a whole class
+// (one term, or term: "all" for every term of the session). Staff only.
+router.post(
+  "/class/:schoolClassId/download",
+  heavyReadLimiter,
+  protect,
+  authorize("admin", "teacher"),
+  reportCardController.downloadClassReportCards,
+);
+
 // POST /report-cards/bulk-download — zip of multiple students' PDFs.
 // Kept before "/:studentId" so it isn't swallowed by the param route.
 router.post(

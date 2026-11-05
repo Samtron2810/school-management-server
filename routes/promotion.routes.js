@@ -7,6 +7,13 @@ import { protect, authorize } from "../middlewares/auth.middleware.js";
 const router = Router();
 
 router.get("/", protect, authorize("admin"), promotionController.getPromotions);
+// Before "/:id" so "roster" isn't read as a promotion id.
+router.get(
+  "/roster",
+  protect,
+  authorize("admin"),
+  promotionController.getPromotionRoster,
+);
 router.get(
   "/:id",
   protect,

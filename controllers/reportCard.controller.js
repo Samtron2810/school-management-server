@@ -64,6 +64,17 @@ const downloadStudentReportCard = asyncHandler(async (req, res) => {
   );
 });
 
+// POST /report-cards/class/:schoolClassId/download
+// body: { session?, term? | "all", students?: [id, ...] }
+const downloadClassReportCards = asyncHandler(async (req, res) => {
+  await reportCardPdfService.streamClassReportCardsZip(
+    req.params.schoolClassId,
+    req.body,
+    req.user,
+    res,
+  );
+});
+
 // POST /report-cards/bulk-download
 // body: { students: [id, ...], session?, term? }
 const downloadBulkReportCards = asyncHandler(async (req, res) => {
@@ -80,6 +91,7 @@ export default {
   getStudentReportCard,
   downloadStudentReportCard,
   downloadBulkReportCards,
+  downloadClassReportCards,
   publishClassReportCards,
   unpublishClassReportCards,
   setStudentReportCardPublishState,

@@ -11,6 +11,14 @@ const promoteStudents = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, "Students promoted successfully.", promotion));
 });
 
+const getPromotionRoster = asyncHandler(async (req, res) => {
+  const roster = await promotionService.getPromotionRoster(req.query, req.user);
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Promotion roster fetched successfully.", roster));
+});
+
 const getPromotions = asyncHandler(async (req, res) => {
   const promotions = await promotionService.getPromotions();
 
@@ -29,6 +37,7 @@ const getPromotionById = asyncHandler(async (req, res) => {
 
 export default {
   promoteStudents,
+  getPromotionRoster,
   getPromotions,
   getPromotionById,
 };

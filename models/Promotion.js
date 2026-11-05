@@ -22,7 +22,14 @@ const promotionResultSchema = new Schema(
 
     status: {
       type: String,
-      enum: ["Promoted", "Transferred", "Graduated", "Skipped", "Failed"],
+      enum: [
+        "Promoted",
+        "Repeated",
+        "Transferred",
+        "Graduated",
+        "Skipped",
+        "Failed",
+      ],
       required: true,
     },
 
@@ -69,10 +76,16 @@ const promotionSchema = new Schema(
       required: true,
     },
 
+    // Null when the run graduates a final class (there is no next class).
     toClass: {
       type: Schema.Types.ObjectId,
       ref: "SchoolClass",
-      required: true,
+      default: null,
+    },
+
+    isGraduation: {
+      type: Boolean,
+      default: false,
     },
 
     promotedBy: {
@@ -101,6 +114,18 @@ const promotionSchema = new Schema(
     },
 
     promotedCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    repeatedCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    graduatedCount: {
       type: Number,
       default: 0,
       min: 0,

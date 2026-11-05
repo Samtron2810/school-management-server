@@ -83,6 +83,27 @@ const updateSettings = async (data) => {
   // Bust cache so next read is fresh
   await cacheDel(CACHE_KEY);
 
+  // Stored totals/grades depend on these settings; re-derive the current
+  // term's so the mark entry grid and report cards never disagree.
+  if (
+    data.scoreComponents ||
+    data.gradeBands ||
+    data.passingScore !== undefined
+  ) {
+    try {
+      const { getCurrentAcademicContext } = await import(
+        "../utils/academicContext.js"
+      );
+      const { default: subjectScoreService } = await import(
+        "./subjectScore.service.js"
+      );
+      const context = await getCurrentAcademicContext();
+      await subjectScoreService.recomputeTermScores(context.term._id);
+    } catch {
+      // No active term yet — nothing to recompute.
+    }
+  }
+
   return settings;
 };
 

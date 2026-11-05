@@ -1,5 +1,6 @@
 import SubjectScore from "../models/SubjectScore.js";
 import ReportCardBatch from "../models/ReportCardBatch.js";
+import ClassSubject from "../models/ClassSubject.js";
 import Enrollment from "../models/Enrollment.js";
 import Student from "../models/Student.js";
 import Parent from "../models/Parent.js";
@@ -11,7 +12,9 @@ import Attendance from "../models/Attendance.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import { getClassRoster, ROSTER_STATUSES } from "../utils/classRoster.js";
 import notificationService from "./notification.service.js";
+import settingService from "./setting.service.js";
 
 const getStudentProfile = async (userId) => {
   const student = await Student.findOne({ user: userId, isActive: true });
@@ -38,13 +41,54 @@ const resolveSessionTerm = async (query) => {
   const session = await findDocumentOrFail(Session, sessionId, "Session");
   const term = await findDocumentOrFail(Term, termId, "Term");
 
+  if (String(term.session) !== String(session._id)) {
+    throw new ApiError(400, "The selected term does not belong to the selected session.");
+  }
+
   return { session, term };
 };
 
+const hasScoreValue = (row, key) => {
+  const value = row.scores?.get ? row.scores.get(key) : row.scores?.[key];
+  return typeof value === "number" && !Number.isNaN(value);
+};
+
+const classLabel = (schoolClass) =>
+  schoolClass.fullName ||
+  [schoolClass.className, schoolClass.arm].filter(Boolean).join(" ");
+
+// { studentId -> { Present: n, Absent: n, ... } } in a single aggregation.
+const getAttendanceCounts = async (studentIds, sessionId, termId) => {
+  const rows = await Attendance.aggregate([
+    {
+      $match: {
+        student: { $in: studentIds },
+        session: sessionId,
+        term: termId,
+        isActive: true,
+      },
+    },
+    {
+      $group: {
+        _id: { student: "$student", status: "$status" },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const byStudent = new Map();
+  for (const { _id, count } of rows) {
+    const key = String(_id.student);
+    if (!byStudent.has(key)) byStudent.set(key, {});
+    byStudent.get(key)[_id.status] = count;
+  }
+  return byStudent;
+};
+
 // GET /report-cards?schoolClass=&session=&term=
-// Admin/teacher: lists every actively-enrolled student in the class who has
-// at least one SubjectScore row (complete or incomplete) for the term —
-// works whether or not the class report card batch has been published.
+// Admin/teacher: lists every enrolled student in the class who has at least
+// one SubjectScore row for the term — works whether or not the class report
+// card batch has been published.
 const listClassReportCards = async (query, user) => {
   if (!["admin", "teacher"].includes(user.role)) {
     throw new ApiError(403, "You are not authorized to view report cards.");
@@ -62,46 +106,49 @@ const listClassReportCards = async (query, user) => {
 
   const { session, term } = await resolveSessionTerm(query);
 
-  const enrollments = await Enrollment.find({
-    schoolClass: schoolClass._id,
-    session: session._id,
-    status: "Active",
-  })
-    .populate({
-      path: "student",
-      populate: {
-        path: "user",
-        select: "firstName lastName otherName username",
-      },
-    })
-    .sort({ rollNumber: 1 });
+  const [enrollments, classSubjectIds, expectedSubjects, settings, batch] =
+    await Promise.all([
+      getClassRoster(schoolClass._id, session._id, {
+        populate: {
+          path: "student",
+          populate: {
+            path: "user",
+            select: "firstName lastName otherName username",
+          },
+        },
+      }),
+      ClassSubject.distinct("_id", { schoolClass: schoolClass._id }),
+      ClassSubject.countDocuments({
+        schoolClass: schoolClass._id,
+        isActive: true,
+      }),
+      settingService.getSettings(),
+      ReportCardBatch.findOne({
+        schoolClass: schoolClass._id,
+        session: session._id,
+        term: term._id,
+      }),
+    ]);
+
+  const activeKeys = (settings.scoreComponents || [])
+    .filter((component) => component.isActive)
+    .map((component) => component.key);
 
   const studentIds = enrollments.map((e) => e.student?._id).filter(Boolean);
 
-  // A student "has data" for this class/term if any SubjectScore row for
-  // any of the class's subjects exists — join via classSubject.schoolClass.
   const scores = await SubjectScore.find({
     student: { $in: studentIds },
     term: term._id,
+    classSubject: { $in: classSubjectIds },
     isActive: true,
-  }).populate({
-    path: "classSubject",
-    match: { schoolClass: schoolClass._id },
   });
 
   const scoresByStudent = new Map();
   for (const row of scores) {
-    if (!row.classSubject) continue; // populate match excluded other classes
     const key = row.student.toString();
     if (!scoresByStudent.has(key)) scoresByStudent.set(key, []);
     scoresByStudent.get(key).push(row);
   }
-
-  const batch = await ReportCardBatch.findOne({
-    schoolClass: schoolClass._id,
-    session: session._id,
-    term: term._id,
-  });
 
   const students = enrollments
     .filter((enrollment) => enrollment.student)
@@ -110,16 +157,21 @@ const listClassReportCards = async (query, user) => {
         scoresByStudent.get(enrollment.student._id.toString()) || [];
       if (studentRows.length === 0) return null;
 
-      const subjectCount = studentRows.length;
-      const completeCount = studentRows.filter(
-        (row) => row.totalMaxMarks > 0 && row.total !== null,
-      ).length;
+      // Complete = every active score column filled for every subject the
+      // class offers. (Totals default to 0, so "total !== null" can never
+      // tell a half-filled row from a finished one.)
+      const isComplete =
+        studentRows.length >= expectedSubjects &&
+        studentRows.every((row) =>
+          activeKeys.every((key) => hasScoreValue(row, key)),
+        );
 
       return {
         student: enrollment.student,
         rollNumber: enrollment.rollNumber ?? null,
-        subjectCount,
-        isComplete: completeCount === subjectCount,
+        subjectCount: studentRows.length,
+        expectedSubjects,
+        isComplete,
         isPublished: studentRows.every((row) => row.isPublished),
         anyPublished: studentRows.some((row) => row.isPublished),
       };
@@ -137,45 +189,21 @@ const listClassReportCards = async (query, user) => {
   };
 };
 
-// Shared builder for a single student's report card payload (used by
-// admin/teacher detail view, student self-view, and parent view).
-const buildStudentReportCard = async (student, session, term) => {
-  const enrollment = await Enrollment.findOne({
-    student: student._id,
-    session: session._id,
-    term: term._id,
-    status: "Active",
-  }).populate("schoolClass");
-
-  const scores = await SubjectScore.find({
-    student: student._id,
-    term: term._id,
-    isActive: true,
-  })
-    .populate({
-      path: "classSubject",
-      populate: [{ path: "subject" }, { path: "schoolClass" }],
-    })
-    .sort({ createdAt: 1 });
-
-  const attendance = await Attendance.find({
-    student: student._id,
-    session: session._id,
-    term: term._id,
-    isActive: true,
-  }).select("status");
-
-  let present = 0;
-  let absent = 0;
-  let late = 0;
-  let excused = 0;
-  for (const record of attendance) {
-    if (record.status === "Present") present++;
-    else if (record.status === "Absent") absent++;
-    else if (record.status === "Late") late++;
-    else if (record.status === "Excused") excused++;
-  }
-  const totalAttendance = attendance.length;
+// Pure assembly of a report card payload from already-loaded data. Shared by
+// the single-student view and the class-wide loader so both always agree.
+const assembleCard = ({
+  student,
+  enrollment,
+  session,
+  term,
+  scores,
+  counts = {},
+}) => {
+  const present = counts.Present || 0;
+  const absent = counts.Absent || 0;
+  const late = counts.Late || 0;
+  const excused = counts.Excused || 0;
+  const totalAttendance = Object.values(counts).reduce((a, b) => a + b, 0);
   const attendancePercentage =
     totalAttendance === 0
       ? 0
@@ -225,6 +253,120 @@ const buildStudentReportCard = async (student, session, term) => {
   };
 };
 
+// The student's enrollment for this session. Prefers the row for the exact
+// term, but falls back to any term in the session (a student is often
+// enrolled once, in the first term) so the class never prints as "—".
+const findStudentEnrollment = async (studentId, sessionId, termId) => {
+  const rows = await Enrollment.find({
+    student: studentId,
+    session: sessionId,
+    status: { $in: ROSTER_STATUSES },
+  }).populate("schoolClass");
+
+  return (
+    rows.find((row) => String(row.term) === String(termId)) || rows[0] || null
+  );
+};
+
+// Shared builder for a single student's report card payload (used by
+// admin/teacher detail view, student self-view, and parent view).
+const buildStudentReportCard = async (student, session, term) => {
+  const [enrollment, scores, counts] = await Promise.all([
+    findStudentEnrollment(student._id, session._id, term._id),
+    SubjectScore.find({
+      student: student._id,
+      term: term._id,
+      isActive: true,
+    })
+      .populate({
+        path: "classSubject",
+        populate: [{ path: "subject" }, { path: "schoolClass" }],
+      })
+      .sort({ createdAt: 1 }),
+    getAttendanceCounts([student._id], session._id, term._id),
+  ]);
+
+  return assembleCard({
+    student,
+    enrollment,
+    session,
+    term,
+    scores,
+    counts: counts.get(String(student._id)),
+  });
+};
+
+// Builds report cards for a whole class in a fixed number of queries
+// (roster, scores, attendance) instead of ~8 queries per student. Used by
+// bulk PDF generation. `studentIds` optionally narrows it to some students.
+const loadClassReportCards = async (
+  schoolClass,
+  session,
+  term,
+  studentIds = null,
+) => {
+  const roster = (
+    await getClassRoster(schoolClass._id, session._id, {
+      populate: {
+        path: "student",
+        populate: {
+          path: "user",
+          select: "firstName lastName otherName username",
+        },
+      },
+    })
+  ).filter((enrollment) => enrollment.student);
+
+  let rows = roster;
+  if (Array.isArray(studentIds) && studentIds.length > 0) {
+    const wanted = new Set(studentIds.map(String));
+    rows = roster.filter((e) => wanted.has(String(e.student._id)));
+  }
+
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((e) => e.student._id);
+  const classSubjectIds = await ClassSubject.distinct("_id", {
+    schoolClass: schoolClass._id,
+  });
+
+  const [scoreRows, counts] = await Promise.all([
+    SubjectScore.find({
+      student: { $in: ids },
+      term: term._id,
+      classSubject: { $in: classSubjectIds },
+      isActive: true,
+    })
+      .populate({ path: "classSubject", populate: { path: "subject" } })
+      .sort({ createdAt: 1 }),
+    getAttendanceCounts(ids, session._id, term._id),
+  ]);
+
+  const scoresByStudent = new Map();
+  for (const row of scoreRows) {
+    const key = String(row.student);
+    if (!scoresByStudent.has(key)) scoresByStudent.set(key, []);
+    scoresByStudent.get(key).push(row);
+  }
+
+  return rows.map((enrollment) => {
+    const key = String(enrollment.student._id);
+    return assembleCard({
+      student: enrollment.student,
+      enrollment: {
+        _id: enrollment._id,
+        rollNumber: enrollment.rollNumber,
+        status: enrollment.status,
+        schoolClass,
+      },
+      session,
+      term,
+      scores: scoresByStudent.get(key) || [],
+      counts: counts.get(key),
+    });
+  });
+};
+
 // GET /report-cards/:studentId — admin/teacher (any time) or the
 // student/parent themselves (only once published).
 const getStudentReportCard = async (studentId, query, user) => {
@@ -267,8 +409,75 @@ const getStudentReportCard = async (studentId, query, user) => {
   return card;
 };
 
+// Class-wide notification, batched: 3 reads + 2 inserts for the whole class
+// (the old per-student loop ran several queries per student before the
+// publish request could respond). Never throws — notifications must not
+// break publishing.
+const notifyClassPublished = async (studentIds, schoolClass, term) => {
+  try {
+    const students = await Student.find({ _id: { $in: studentIds } }).select(
+      "user",
+    );
+    const links = await ParentStudent.find({
+      student: { $in: studentIds },
+      isActive: true,
+    }).select("parent");
+    const parents = links.length
+      ? await Parent.find({
+          _id: { $in: links.map((link) => link.parent) },
+        }).select("user")
+      : [];
+
+    const label = `${classLabel(schoolClass)} (${term.name})`;
+
+    await notificationService.notifyUsers(
+      students.map((s) => s.user),
+      {
+        title: "Report Card Published",
+        message: `Your report card for ${label} has been published.`,
+        type: "grade",
+        link: `/student/report-cards`,
+      },
+    );
+    await notificationService.notifyUsers(
+      parents.map((p) => p.user),
+      {
+        title: "Child's Report Card Published",
+        message: `Your child's report card for ${label} has been published.`,
+        type: "grade",
+        link: `/parent/child-report-cards`,
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Failed to send report card notifications:",
+      error?.message || error,
+    );
+  }
+};
+
+// The SubjectScore filter for "every score row of this class in this term".
+const classScoreFilter = async (schoolClass, session, term) => {
+  const [roster, classSubjectIds] = await Promise.all([
+    getClassRoster(schoolClass._id, session._id),
+    ClassSubject.distinct("_id", { schoolClass: schoolClass._id }),
+  ]);
+
+  const studentIds = roster.map((e) => e.student);
+
+  return {
+    studentIds,
+    filter: {
+      student: { $in: studentIds },
+      term: term._id,
+      classSubject: { $in: classSubjectIds },
+      isActive: true,
+    },
+  };
+};
+
 // POST /report-cards/:schoolClass/publish — publishes every SubjectScore
-// row for every actively-enrolled student in the class, for this term.
+// row for every enrolled student in the class, for this term.
 // Batch-level; individual students can be unpublished afterward.
 const publishClassReportCards = async (schoolClassId, body, user) => {
   if (!["admin", "teacher"].includes(user.role)) {
@@ -282,28 +491,13 @@ const publishClassReportCards = async (schoolClassId, body, user) => {
   );
   const { session, term } = await resolveSessionTerm(body);
 
-  const enrollments = await Enrollment.find({
-    schoolClass: schoolClass._id,
-    session: session._id,
-    status: "Active",
-  }).select("student");
-
-  const studentIds = enrollments.map((e) => e.student);
-
-  const classSubjectRowIds = await SubjectScore.find({
-    student: { $in: studentIds },
-    term: term._id,
-    isActive: true,
-  })
-    .populate({ path: "classSubject", match: { schoolClass: schoolClass._id } })
-    .then((rows) =>
-      rows.filter((row) => row.classSubject).map((row) => row._id),
-    );
-
-  await SubjectScore.updateMany(
-    { _id: { $in: classSubjectRowIds } },
-    { isPublished: true },
+  const { studentIds, filter } = await classScoreFilter(
+    schoolClass,
+    session,
+    term,
   );
+
+  await SubjectScore.updateMany(filter, { isPublished: true });
 
   const batch = await ReportCardBatch.findOneAndUpdate(
     { schoolClass: schoolClass._id, session: session._id, term: term._id },
@@ -317,48 +511,17 @@ const publishClassReportCards = async (schoolClassId, body, user) => {
     { upsert: true, new: true },
   );
 
-  // Notify all students in the class and their parents.
-  try {
-    const studentDocs = await Student.find({ _id: { $in: studentIds } }).select("user");
-    for (const studentDoc of studentDocs) {
-      if (studentDoc.user) {
-        // Notify student
-        await notificationService.notifyUsers([studentDoc.user], {
-          title: "Report Card Published",
-          message: `Your report card for ${schoolClass.name || schoolClass.className} ${schoolClass.arm || ""} (${term.name}) has been published.`,
-          type: "grade",
-          link: `/student/report-cards`,
-        });
-      }
-
-      // Find parent users linked to student
-      const relations = await ParentStudent.find({ student: studentDoc._id, isActive: true }).select("parent");
-      const parentIds = relations.map(r => r.parent);
-      if (parentIds.length > 0) {
-        const parents = await Parent.find({ _id: { $in: parentIds } }).select("user");
-        const parentUserIds = parents.map(p => p.user).filter(Boolean);
-        if (parentUserIds.length > 0) {
-          // Notify parents
-          await notificationService.notifyUsers(parentUserIds, {
-            title: "Child's Report Card Published",
-            message: `The report card for ${studentDoc.user?.firstName || "your child"} in ${schoolClass.name || schoolClass.className} ${schoolClass.arm || ""} (${term.name}) has been published.`,
-            type: "grade",
-            link: `/parent/child-report-cards`,
-          });
-        }
-      }
-    }
-  } catch (error) {
-    console.error(
-      "Failed to send report card notifications:",
-      error?.message || error,
-    );
-  }
+  // Fire and forget: students/parents get notified without making the
+  // publisher wait for it.
+  notifyClassPublished(studentIds, schoolClass, term);
 
   return batch;
 };
 
 // POST /report-cards/:schoolClass/unpublish — class-level withdrawal.
+// Students and parents see a report card based on the SubjectScore rows'
+// isPublished flag, so those rows MUST be flipped too — updating only the
+// batch record would leave every card still visible.
 const unpublishClassReportCards = async (schoolClassId, body, user) => {
   if (!["admin", "teacher"].includes(user.role)) {
     throw new ApiError(
@@ -373,6 +536,10 @@ const unpublishClassReportCards = async (schoolClassId, body, user) => {
     "Class",
   );
   const { session, term } = await resolveSessionTerm(body);
+
+  const { filter } = await classScoreFilter(schoolClass, session, term);
+
+  await SubjectScore.updateMany(filter, { isPublished: false });
 
   const batch = await ReportCardBatch.findOneAndUpdate(
     { schoolClass: schoolClass._id, session: session._id, term: term._id },
@@ -409,27 +576,30 @@ const setStudentReportCardPublishState = async (studentId, body, user) => {
   // Notify the student and their parents.
   try {
     const action = body.isPublished ? "published" : "unpublished";
-    
-    // Notify student
+    const Action = action.charAt(0).toUpperCase() + action.slice(1);
+
     if (student.user) {
       await notificationService.notifyUsers([student.user], {
-        title: `Report Card ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+        title: `Report Card ${Action}`,
         message: `Your report card has been ${action}.`,
         type: "grade",
         link: `/student/report-cards`,
       });
     }
 
-    // Find parent users linked to student
-    const relations = await ParentStudent.find({ student: student._id, isActive: true }).select("parent");
-    const parentIds = relations.map(r => r.parent);
+    const relations = await ParentStudent.find({
+      student: student._id,
+      isActive: true,
+    }).select("parent");
+    const parentIds = relations.map((r) => r.parent);
     if (parentIds.length > 0) {
-      const parents = await Parent.find({ _id: { $in: parentIds } }).select("user");
-      const parentUserIds = parents.map(p => p.user).filter(Boolean);
+      const parents = await Parent.find({ _id: { $in: parentIds } }).select(
+        "user",
+      );
+      const parentUserIds = parents.map((p) => p.user).filter(Boolean);
       if (parentUserIds.length > 0) {
-        // Notify parents
         await notificationService.notifyUsers(parentUserIds, {
-          title: `Child's Report Card ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+          title: `Child's Report Card ${Action}`,
           message: `The report card for your child has been ${action}.`,
           type: "grade",
           link: `/parent/child-report-cards`,
@@ -451,9 +621,11 @@ const setStudentReportCardPublishState = async (studentId, body, user) => {
 };
 
 export default {
+  resolveSessionTerm,
   listClassReportCards,
   getStudentReportCard,
   buildStudentReportCard,
+  loadClassReportCards,
   publishClassReportCards,
   unpublishClassReportCards,
   setStudentReportCardPublishState,

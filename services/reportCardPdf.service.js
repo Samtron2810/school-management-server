@@ -1,14 +1,14 @@
 import PDFDocument from "pdfkit";
-import { createRequire } from "module";
+import { ZipArchive } from "archiver";
 import reportCardService from "./reportCard.service.js";
 import settingService from "./setting.service.js";
+import SchoolClass from "../models/SchoolClass.js";
+import Session from "../models/Session.js";
+import Term from "../models/Term.js";
 import ApiError from "../utils/ApiError.js";
-
-// archiver ships as CommonJS; Node's strict ESM loader can't always
-// synthesize a default export for it depending on the installed version,
-// so it's pulled in via createRequire instead of a plain default import.
-const require = createRequire(import.meta.url);
-const archiver = require("archiver");
+import findDocumentOrFail from "../utils/findDocumentOrFail.js";
+import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import logger from "../config/logger.js";
 
 // Mirrors SchoolSetting's own schema default, used only if settings can't
 // be loaded at all so the PDF still renders something sensible.
@@ -19,24 +19,61 @@ const fallbackScoreComponents = [
   { key: "exam", label: "Exam", maxMarks: 60, isActive: true },
 ];
 
-const getGlobalScoreComponents = async () => {
+const slug = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+// PDFKit only embeds JPEG/PNG. For Cloudinary logos, ask for a small PNG so
+// a large or WebP original can't bloat (or break) every PDF in a batch.
+const optimizeLogoUrl = (url) =>
+  url.includes("res.cloudinary.com") && url.includes("/upload/")
+    ? url.replace("/upload/", "/upload/w_240,f_png/")
+    : url;
+
+// Fetched ONCE per job (not once per student) with a hard timeout so a slow
+// image host can never hang a whole batch.
+const loadLogoBuffer = async (url) => {
+  if (!url) return null;
   try {
-    const settings = await settingService.getSettings();
-    if (
-      Array.isArray(settings.scoreComponents) &&
-      settings.scoreComponents.length > 0
-    ) {
-      return settings.scoreComponents;
-    }
+    const res = await fetch(optimizeLogoUrl(url), {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
   } catch {
-    // fall through
+    return null; // unreachable / unsupported — letterhead renders without it
   }
-  return fallbackScoreComponents;
+};
+
+// Everything that is identical for every card in a job: school settings,
+// score columns, logo. Load it once and pass it to every drawReportCard.
+const buildRenderContext = async () => {
+  let settings = null;
+  try {
+    settings = await settingService.getSettings();
+  } catch {
+    // fall through — letterhead degrades gracefully
+  }
+
+  const scoreComponents =
+    Array.isArray(settings?.scoreComponents) &&
+    settings.scoreComponents.length > 0
+      ? settings.scoreComponents
+      : fallbackScoreComponents;
+
+  return {
+    settings,
+    scoreComponents,
+    logoBuffer: await loadLogoBuffer(settings?.logo?.url || ""),
+  };
 };
 
 // Draws report card content onto an already-created PDFDocument. Caller is
 // responsible for creating the doc, piping/collecting its output, and
-// calling doc.end() when done.
+// calling doc.end() when done. `ctx` (see buildRenderContext) is optional;
+// pass it when drawing many cards so nothing is reloaded per card.
 //
 // IMPORTANT: every piece of text below is placed with an explicit (x, y)
 // and we track `y` ourselves in a local variable. PDFKit's own auto-flow
@@ -44,7 +81,10 @@ const getGlobalScoreComponents = async () => {
 // coordinates — mixing explicit positioning with moveDown()/auto-flow text
 // is what caused an earlier scattered/overlapping layout. Keeping one
 // manual cursor for the whole page avoids that entirely.
-const drawReportCard = async (doc, card) => {
+const drawReportCard = async (doc, card, ctx = null) => {
+  const { settings, scoreComponents, logoBuffer } =
+    ctx || (await buildRenderContext());
+
   const studentName =
     card.student?.user?.fullName || card.student?.admissionNumber || "Student";
   const className = card.enrollment?.schoolClass?.fullName || "—";
@@ -85,15 +125,6 @@ const drawReportCard = async (doc, card) => {
   };
 
   // ── Letterhead ──────────────────────────────────────────────────────────
-  // Load school settings for logo + profile fields.
-  let settings = null;
-  try {
-    settings = await settingService.getSettings();
-  } catch {
-    // fall through — letterhead will degrade gracefully
-  }
-
-  const logoUrl = settings?.logo?.url || "";
   const schoolName = settings?.schoolName || "TronSchool";
   const schoolAddress = settings?.address || "";
   const schoolEmail = settings?.email || "";
@@ -101,32 +132,24 @@ const drawReportCard = async (doc, card) => {
 
   const logoSize = 70; // square px
   const logoRightGutter = 12;
-  const profileX = pageLeft + (logoUrl ? logoSize + logoRightGutter : 0);
+  const hasLogo = Boolean(logoBuffer);
+  const profileX = pageLeft + (hasLogo ? logoSize + logoRightGutter : 0);
   const profileWidth =
-    contentWidth - (logoUrl ? logoSize + logoRightGutter : 0);
+    contentWidth - (hasLogo ? logoSize + logoRightGutter : 0);
 
-  // Draw logo image if a URL is configured. PDFKit supports jpeg/png via
-  // the image() method. A missing or broken URL is caught and silently
-  // skipped so the rest of the letterhead still renders.
-  if (logoUrl) {
+  // A broken image is skipped so the rest of the letterhead still renders.
+  if (hasLogo) {
     try {
-      const res = await fetch(logoUrl);
-      if (res.ok) {
-        const arrayBuffer = await res.arrayBuffer();
-        const imgBuffer = Buffer.from(arrayBuffer);
-        doc.image(imgBuffer, pageLeft, y, {
-          width: logoSize + 10,
-          height: logoSize,
-        });
-      }
+      doc.image(logoBuffer, pageLeft, y, {
+        width: logoSize + 10,
+        height: logoSize,
+      });
     } catch {
-      // URL unreachable or not a supported image — skip logo silently.
+      // not a supported image — skip logo silently.
     }
   }
 
   // School name, address, contact — centred in the space beside the logo.
-  // Sized up for a standard letterhead look (school name doubled from 15
-  // to 30, address/contact doubled from 9 to 18).
   const letterheadY = y;
   doc
     .font("Helvetica-Bold")
@@ -206,19 +229,16 @@ const drawReportCard = async (doc, card) => {
 
   // Score-component columns (CA 1, CA 2, Test, Exam, etc) are global and
   // admin-managed — every subject on this report card shares the exact
-  // same set, so there's no need to reconcile differing per-subject
-  // configs here anymore.
-  const scoreComponents = await getGlobalScoreComponents();
+  // same set.
   const breakdownColumns = scoreComponents
     .filter((c) => c.isActive)
     .map((c) => ({ key: c.key, label: c.label }));
 
   // Subject score table. Column widths sum to contentWidth.
-  // "%" column is removed — merged into "Total" which now shows the
-  // percentage value directly (displayed as a plain number, e.g. 67).
+  // "Total %" shows the percentage as a plain number, e.g. 67.
   const fixedColumnShares = {
     subject: 0.18,
-    total: 0.13, // slightly wider now that % column is gone
+    total: 0.13,
     grade: 0.09,
     remark: 0.16,
   };
@@ -242,7 +262,6 @@ const drawReportCard = async (doc, card) => {
       label: c.label.length > 6 ? `${c.label.slice(0, 5)}.` : c.label,
       width: contentWidth * breakdownShareEach,
     })),
-    // "Total %" header; data rows show plain percentage number (e.g. 67)
     {
       key: "total",
       label: "Total %",
@@ -317,7 +336,6 @@ const drawReportCard = async (doc, card) => {
         return value === undefined || value === null ? "—" : String(value);
       });
 
-      // Total % column: show percentage as a plain number (e.g. 67, not 67%)
       const percentageDisplay =
         row.percentage !== undefined && row.percentage !== null
           ? String(row.percentage)
@@ -377,8 +395,21 @@ const drawReportCard = async (doc, card) => {
   });
 };
 
-// Generates a single student's report card PDF and streams it directly to
-// the HTTP response.
+// Renders one card to a Buffer. doc.end() is only called after drawing has
+// fully finished, so output is never cut short.
+const renderCardToBuffer = (card, ctx) =>
+  new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    drawReportCard(doc, card, ctx)
+      .then(() => doc.end())
+      .catch(reject);
+  });
+
+// Generates a single student's report card PDF and sends it.
 const streamStudentReportCardPdf = async (studentId, query, user, res) => {
   const card = await reportCardService.getStudentReportCard(
     studentId,
@@ -386,94 +417,278 @@ const streamStudentReportCardPdf = async (studentId, query, user, res) => {
     user,
   );
 
+  const buffer = await renderCardToBuffer(card, await buildRenderContext());
+
   const studentName = card.student?.user?.fullName || "student";
-  const filename = `report-card-${studentName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
-
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-  const doc = new PDFDocument({ size: "A4", margin: 40 });
-  doc.pipe(res);
-  await drawReportCard(doc, card);
-  doc.end();
-};
-
-// Hard cap on bulk PDF requests. Each PDF sits in memory during generation
-// before being handed to archiver. At ~200-500 KB per PDF, 100 students ≈
-// 50 MB peak — safe. Beyond this, callers should paginate their requests.
-const BULK_PDF_MAX_STUDENTS = 100;
-
-// Generates report cards for multiple students and streams them as a
-// single zip file to the HTTP response. Students the caller can't access
-// (e.g. not yet published, for a non-staff caller) are skipped rather than
-// failing the whole batch.
-//
-// Memory strategy: generate one PDF at a time, hand the buffer to archiver,
-// then explicitly release the reference before moving to the next student.
-// This keeps peak memory at max(1 PDF) rather than max(all PDFs at once).
-const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
-  if (!Array.isArray(studentIds) || studentIds.length === 0) {
-    throw new ApiError(400, "At least one student is required.");
-  }
-
-  if (studentIds.length > BULK_PDF_MAX_STUDENTS) {
-    throw new ApiError(
-      400,
-      `Bulk download is limited to ${BULK_PDF_MAX_STUDENTS} students per request. Split into smaller batches.`,
-    );
-  }
-
-  res.setHeader("Content-Type", "application/zip");
   res.setHeader(
     "Content-Disposition",
-    'attachment; filename="report-cards.zip"',
+    `attachment; filename="report-card-${slug(studentName) || "student"}.pdf"`,
   );
+  res.setHeader("Content-Length", buffer.length);
+  res.end(buffer);
+};
 
-  // Use compression level 6 (default) — level 9 is marginally smaller but
-  // significantly more CPU-intensive on large batches.
-  const archive = archiver("zip", { zlib: { level: 6 } });
+// ── Bulk zip ───────────────────────────────────────────────────────────────
+
+// Hard cap on PDFs per zip (a class of ~100 across all three terms).
+const BULK_PDF_MAX_FILES = 300;
+
+// PDF generation is CPU-bound and runs on the same thread as every other
+// request. Limit simultaneous bulk jobs per server instance so a few people
+// clicking "download" together can't starve the API or exhaust memory.
+const MAX_CONCURRENT_BULK_JOBS = 2;
+let activeBulkJobs = 0;
+
+const acquireBulkSlot = () => {
+  if (activeBulkJobs >= MAX_CONCURRENT_BULK_JOBS) {
+    throw new ApiError(
+      429,
+      "Report cards are already being generated for other users. Please try again in a minute.",
+    );
+  }
+  activeBulkJobs++;
+  let released = false;
+  return () => {
+    if (!released) {
+      released = true;
+      activeBulkJobs--;
+    }
+  };
+};
+
+// Appends a buffer and waits until archiver has taken it before returning,
+// so at most ONE finished PDF is ever queued in memory — even when the
+// client downloads slowly. A timeout stops a missed event from hanging.
+const appendAndWait = (archive, buffer, name) =>
+  new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      archive.off("entry", done);
+      archive.off("error", done);
+      resolve();
+    };
+    const timer = setTimeout(done, 15000);
+    archive.on("entry", done);
+    archive.on("error", done);
+    archive.append(buffer, { name });
+  });
+
+// Streams `entries` ([{ path, card }]) into a zip on `res`, one PDF at a
+// time. `notes` lists anything skipped and is added to the zip as
+// _skipped.txt. All stream errors are handled here: an unhandled 'error'
+// event on the archive would otherwise crash the whole Node process.
+const zipCards = async (res, entries, ctx, notes, zipName) => {
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+
+  const archive = new ZipArchive({ zlib: { level: 6 } });
+  let aborted = false;
+
+  const abort = () => {
+    if (aborted) return;
+    aborted = true;
+    archive.abort();
+  };
+
+  // Client closed the tab / lost connection: stop generating PDFs for nobody.
+  res.on("close", () => {
+    if (!res.writableFinished) abort();
+  });
+  archive.on("warning", (err) =>
+    logger.warn({ type: "report_zip", event: "warning", error: err.message }),
+  );
+  archive.on("error", (err) => {
+    logger.error({ type: "report_zip", event: "error", error: err.message });
+    abort();
+    res.destroy();
+  });
+
   archive.pipe(res);
 
-  for (const studentId of studentIds) {
+  for (const entry of entries) {
+    if (aborted) break;
+
     try {
-      const card = await reportCardService.getStudentReportCard(
-        studentId,
-        query,
-        user,
-      );
-      const studentName = card.student?.user?.fullName || studentId;
-      const filename = `${studentName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
-
-      const doc = new PDFDocument({ size: "A4", margin: 40 });
-      const chunks = [];
-      doc.on("data", (chunk) => chunks.push(chunk));
-
-      const buffer = await new Promise((resolve, reject) => {
-        doc.on("end", () => resolve(Buffer.concat(chunks)));
-        doc.on("error", reject);
-        drawReportCard(doc, card)
-          .then(() => doc.end())
-          .catch(reject);
-      });
-
-      archive.append(buffer, { name: filename });
-
-      // Release the card and buffer from memory before the next iteration.
-      // In a tight loop over many students this prevents accumulated
-      // allocations from sitting until GC runs after the loop completes.
-      chunks.length = 0;
-    } catch {
-      // Skip students that fail (not published, not found, etc.) instead
-      // of aborting the whole zip.
-      continue;
+      const buffer = await renderCardToBuffer(entry.card, ctx);
+      await appendAndWait(archive, buffer, entry.path);
+    } catch (err) {
+      notes.push(`${entry.path}: could not be generated (${err.message})`);
     }
+
+    // Give other requests a turn between PDFs.
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  if (aborted) return;
+
+  if (notes.length > 0) {
+    archive.append(Buffer.from(notes.join("\n"), "utf8"), {
+      name: "_skipped.txt",
+    });
   }
 
   await archive.finalize();
 };
 
+const cardFileBase = (card, index) => {
+  const name = slug(
+    card.student?.user?.fullName || card.student?.admissionNumber || "student",
+  );
+  const suffix = slug(card.student?.admissionNumber) || String(index + 1);
+  return `${name}-${suffix}`;
+};
+
+// POST /report-cards/class/:schoolClassId/download
+// body: { session?, term? | "all", students?: [id, ...] }
+// Builds the whole class's report cards from a handful of queries and
+// streams them as one zip. term = "all" produces one folder per term of the
+// session. Staff only.
+const streamClassReportCardsZip = async (schoolClassId, body, user, res) => {
+  if (!["admin", "teacher"].includes(user.role)) {
+    throw new ApiError(403, "You are not authorized to download report cards.");
+  }
+
+  const release = acquireBulkSlot();
+
+  try {
+    const schoolClass = await findDocumentOrFail(
+      SchoolClass,
+      schoolClassId,
+      "Class",
+    );
+
+    const allTerms = body.term === "all";
+    let session;
+    let terms;
+
+    if (allTerms) {
+      session = body.session
+        ? await findDocumentOrFail(Session, body.session, "Session")
+        : await findDocumentOrFail(
+            Session,
+            (await getCurrentAcademicContext()).session._id,
+            "Session",
+          );
+      terms = await Term.find({ session: session._id }).sort({ startDate: 1 });
+    } else {
+      const resolved = await reportCardService.resolveSessionTerm(body);
+      session = resolved.session;
+      terms = [resolved.term];
+    }
+
+    const studentFilter =
+      Array.isArray(body.students) && body.students.length > 0
+        ? body.students
+        : null;
+
+    const entries = [];
+    const notes = [];
+
+    for (const term of terms) {
+      const cards = await reportCardService.loadClassReportCards(
+        schoolClass,
+        session,
+        term,
+        studentFilter,
+      );
+      const folder = allTerms ? `${slug(term.name)}/` : "";
+
+      cards.forEach((card, index) => {
+        if (card.subjects.length === 0) {
+          const who = card.student?.user?.fullName || "A student";
+          notes.push(`${who} (${term.name}): no scores recorded, skipped.`);
+          return;
+        }
+        entries.push({
+          path: `${folder}${cardFileBase(card, index)}.pdf`,
+          card,
+        });
+      });
+    }
+
+    if (entries.length === 0) {
+      throw new ApiError(
+        404,
+        "No report cards with scores were found for this selection.",
+      );
+    }
+
+    if (entries.length > BULK_PDF_MAX_FILES) {
+      throw new ApiError(
+        400,
+        `Too many report cards (${entries.length}). Download one term, or select fewer students.`,
+      );
+    }
+
+    const ctx = await buildRenderContext();
+    const zipName = `${slug(schoolClass.fullName)}-${slug(session.name)}-${
+      allTerms ? "all-terms" : slug(terms[0].name)
+    }.zip`;
+
+    await zipCards(res, entries, ctx, notes, zipName);
+  } finally {
+    release();
+  }
+};
+
+// POST /report-cards/bulk-download (kept for compatibility)
+// body: { students: [id, ...], session?, term? }
+// Per-student access rules apply, so cards that the caller can't see (e.g.
+// unpublished, for a student/parent) are skipped and listed in _skipped.txt.
+const streamBulkReportCardsZip = async (studentIds, query, user, res) => {
+  if (!Array.isArray(studentIds) || studentIds.length === 0) {
+    throw new ApiError(400, "At least one student is required.");
+  }
+
+  if (studentIds.length > 100) {
+    throw new ApiError(
+      400,
+      "Bulk download is limited to 100 students per request. Split into smaller batches.",
+    );
+  }
+
+  const release = acquireBulkSlot();
+
+  try {
+    const entries = [];
+    const notes = [];
+
+    for (const studentId of studentIds) {
+      try {
+        const card = await reportCardService.getStudentReportCard(
+          studentId,
+          query,
+          user,
+        );
+        entries.push({
+          path: `${cardFileBase(card, entries.length)}.pdf`,
+          card,
+        });
+      } catch (err) {
+        notes.push(`${studentId}: skipped (${err.message})`);
+      }
+    }
+
+    if (entries.length === 0) {
+      throw new ApiError(404, "No report cards are available to download.");
+    }
+
+    await zipCards(
+      res,
+      entries,
+      await buildRenderContext(),
+      notes,
+      "report-cards.zip",
+    );
+  } finally {
+    release();
+  }
+};
+
 export default {
   drawReportCard,
   streamStudentReportCardPdf,
+  streamClassReportCardsZip,
   streamBulkReportCardsZip,
 };
