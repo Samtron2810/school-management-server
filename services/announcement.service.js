@@ -10,6 +10,7 @@ import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import notificationService from "./notification.service.js";
+import { findStudentEnrollment } from "../utils/classRoster.js";
 
 const roles = ["admin", "teacher", "student", "parent"];
 
@@ -132,7 +133,6 @@ const isVisibleToUser = async (announcement, user, academicContext) => {
         student: { $in: childIds },
         schoolClass: { $in: announcement.targetClasses },
         session: session._id,
-        term: term._id,
         status: "Active",
       });
       if (enrollment) return true;
@@ -159,12 +159,11 @@ const isVisibleToUser = async (announcement, user, academicContext) => {
     if (user.role === "student") {
       const student = await getStudentProfile(user._id);
 
-      const enrollment = await Enrollment.findOne({
-        student: student._id,
-        session: session._id,
-        term: term._id,
-        status: "Active",
-      });
+      const enrollment = await findStudentEnrollment(
+        student._id,
+        session._id,
+        term._id,
+      );
 
       if (!enrollment) {
         return false;

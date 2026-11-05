@@ -2,7 +2,6 @@ import Attendance from "../models/Attendance.js";
 import Teacher from "../models/Teacher.js";
 import TeacherAssignment from "../models/TeacherAssignment.js";
 import Student from "../models/Student.js";
-import Enrollment from "../models/Enrollment.js";
 import ClassSubject from "../models/ClassSubject.js";
 import SchoolClass from "../models/SchoolClass.js";
 import Parent from "../models/Parent.js";
@@ -14,6 +13,7 @@ import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache } from "./dashboard.service.js";
 import { startOfDayUTC, dayRangeUTC } from "../utils/normalizeDate.js";
+import { findStudentEnrollment, getClassRoster } from "../utils/classRoster.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -97,12 +97,11 @@ const authorizeStudentAttendanceAccess = async (studentId, user) => {
 
     const { session, term } = await getCurrentAcademicContext();
 
-    const enrollment = await Enrollment.findOne({
-      student: studentId,
-      session: session._id,
-      term: term._id,
-      status: "Active",
-    });
+    const enrollment = await findStudentEnrollment(
+      studentId,
+      session._id,
+      term._id,
+    );
 
     if (!enrollment) {
       throw new ApiError(404, "No active enrollment found for this student.");
@@ -185,15 +184,12 @@ const markAttendance = async (data, user) => {
 
   const classSubject = await getClassSubject(assignment);
 
-  const enrollments = await Enrollment.find({
-    schoolClass: assignment.schoolClass,
-
-    session: session._id,
-
-    term: term._id,
-
-    status: "Active",
-  }).select("student");
+  // Class list for the session (one row per student, any term).
+  const enrollments = await getClassRoster(
+    assignment.schoolClass,
+    session._id,
+    { statuses: ["Active"] },
+  );
 
   // Protect against null student references in the enrollment map
   const validStudentIds = new Set(

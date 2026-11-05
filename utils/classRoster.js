@@ -32,3 +32,31 @@ export const getClassRoster = async (
 
   return [...byStudent.values()];
 };
+
+// A student's enrollment for a session. Enrollments are created once (for
+// the term the student was admitted in) and are NOT copied forward when a
+// new term starts, so asking for "the current term's row" finds nobody in
+// Term 2 / Term 3. This prefers the exact term when it exists and otherwise
+// falls back to the student's latest row in the session.
+export const findStudentEnrollment = async (
+  studentId,
+  sessionId,
+  termId = null,
+  { statuses = ["Active"], populate = null } = {},
+) => {
+  let query = Enrollment.find({
+    student: studentId,
+    session: sessionId,
+    status: { $in: statuses },
+  }).sort({ createdAt: -1 });
+
+  if (populate) query = query.populate(populate);
+
+  const rows = await query;
+  if (rows.length === 0) return null;
+
+  return (
+    (termId && rows.find((row) => String(row.term) === String(termId))) ||
+    rows[0]
+  );
+};

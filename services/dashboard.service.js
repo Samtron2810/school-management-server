@@ -18,6 +18,7 @@ import ApiError from "../utils/ApiError.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import ParentStudent from "../models/ParentStudent.js";
 import { cacheGet, cacheSet, cacheDel } from "../config/redis.js";
+import { findStudentEnrollment } from "../utils/classRoster.js";
 
 const SUMMARY_TTL = 120;  // 2 min — counts change with every enrollment/student write
 const CHART_TTL   = 300;  // 5 min — grade/attendance distributions are slower to shift
@@ -65,7 +66,8 @@ const getBaseSummary = async () => {
     Student.countDocuments({ isActive: true }),
     Teacher.countDocuments({ isActive: true }),
     Parent.countDocuments({ isActive: true }),
-    Enrollment.countDocuments({}),
+    // Distinct students currently on a class list (rows exist per term).
+    Enrollment.distinct("student", { status: "Active" }).then((ids) => ids.length),
     Assessment.countDocuments({ isActive: true }),
     StudentAttempt.countDocuments({ isActive: true }),
     Result.countDocuments({ isActive: true }),
@@ -159,9 +161,9 @@ const getRoleSpecificSummary = async (user) => {
     const student = await getStudentProfile(user._id);
     const { session, term } = await getCurrentAcademicContext();
     const [enrollment, results, attempts] = await Promise.all([
-      Enrollment.findOne({
-        student: student._id, session: session._id, term: term._id, status: "Active",
-      }).populate("schoolClass"),
+      findStudentEnrollment(student._id, session._id, term._id, {
+        populate: "schoolClass",
+      }),
       Result.countDocuments({ student: student._id, session: session._id, term: term._id, isActive: true }),
       StudentAttempt.countDocuments({ student: student._id, isActive: true }),
     ]);

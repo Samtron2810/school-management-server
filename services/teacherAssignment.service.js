@@ -5,10 +5,10 @@ import TeacherAssignment from "../models/TeacherAssignment.js";
 import ClassSubject from "../models/ClassSubject.js";
 import Assessment from "../models/Assessment.js";
 import Attendance from "../models/Attendance.js";
-import Enrollment from "../models/Enrollment.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import { getClassRoster } from "../utils/classRoster.js";
 
 const createTeacherAssignment = async (data) => {
   const { session, term } = await getCurrentAcademicContext();
@@ -224,20 +224,25 @@ const getAssignmentStudents = async (assignmentId, user) => {
     }
   }
 
-  const enrollments = await Enrollment.find({
-    schoolClass: assignment.schoolClass,
-    session: assignment.session,
-    status: "Active",
-  })
-    .populate({
-      path: "student",
-      match: { isActive: true },
-      populate: {
-        path: "user",
-        select: "firstName lastName otherName username email avatar",
-      },
-    })
-    .populate("schoolClass");
+  // One row per student (enrollments exist per term).
+  const enrollments = await getClassRoster(
+    assignment.schoolClass,
+    assignment.session,
+    {
+      statuses: ["Active"],
+      populate: [
+        {
+          path: "student",
+          match: { isActive: true },
+          populate: {
+            path: "user",
+            select: "firstName lastName otherName username email avatar",
+          },
+        },
+        { path: "schoolClass" },
+      ],
+    },
+  );
 
   return enrollments.filter((enrollment) => enrollment.student);
 };

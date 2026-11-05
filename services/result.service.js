@@ -5,7 +5,6 @@ import Student from "../models/Student.js";
 import Teacher from "../models/Teacher.js";
 import Parent from "../models/Parent.js";
 import ParentStudent from "../models/ParentStudent.js";
-import Enrollment from "../models/Enrollment.js";
 import Attendance from "../models/Attendance.js";
 import ClassSubject from "../models/ClassSubject.js";
 import SchoolClass from "../models/SchoolClass.js";
@@ -19,6 +18,7 @@ import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import settingService from "./setting.service.js";
 import { bustDashboardCache } from "./dashboard.service.js";
+import { findStudentEnrollment, getClassRoster, ROSTER_STATUSES } from "../utils/classRoster.js";
 
 // Fallback used only when school settings can't be loaded.
 const defaultGradeBands = [
@@ -612,12 +612,14 @@ const generateReportCard = async (studentId, query, user) => {
   const session = await findDocumentOrFail(Session, sessionId, "Session");
   const term = await findDocumentOrFail(Term, termId, "Term");
 
-  const enrollment = await Enrollment.findOne({
-    student: student._id,
-    session: session._id,
-    term: term._id,
-    status: "Active",
-  }).populate("schoolClass");
+  // Any status: a promoted student's old-session report card still shows
+  // the class they were in.
+  const enrollment = await findStudentEnrollment(
+    student._id,
+    session._id,
+    term._id,
+    { statuses: ROSTER_STATUSES, populate: "schoolClass" },
+  );
 
   const results = await Result.find({
     student: student._id,
@@ -815,11 +817,7 @@ async function generateClassReportCards(schoolClassId, query, user) {
   }
   const session = await findDocumentOrFail(Session, sessionId, "Session");
 
-  const enrollments = await Enrollment.find({
-    schoolClass: schoolClass._id,
-    session: session._id,
-    status: "Active",
-  }).select("student");
+  const enrollments = await getClassRoster(schoolClass._id, session._id);
 
   const cards = await Promise.all(
     enrollments.map(async (enrollment) => {

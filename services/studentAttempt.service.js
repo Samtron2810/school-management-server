@@ -17,6 +17,8 @@ import subjectScoreService, {
 } from "./subjectScore.service.js";
 import notificationService from "./notification.service.js";
 import resultService from "./result.service.js";
+import ClassSubject from "../models/ClassSubject.js";
+import { findStudentEnrollment } from "../utils/classRoster.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -100,6 +102,39 @@ const validateAssessment = async (assessmentId, student, session) => {
   }
 
   await ensureAssessmentAvailable(assessment);
+
+  if (!assessment.isPublished) {
+    throw new ApiError(403, "This assessment is not available.");
+  }
+
+  // Only the current term's assessments, and only for students in the
+  // class the assessment belongs to.
+  const { session: currentSession, term: currentTerm } =
+    await getCurrentAcademicContext();
+
+  if (
+    String(assessment.session) !== String(currentSession._id) ||
+    String(assessment.term) !== String(currentTerm._id)
+  ) {
+    throw new ApiError(403, "This assessment is not available.");
+  }
+
+  const classSubject = await ClassSubject.findById(
+    assessment.classSubject,
+  ).session(session);
+  const enrollment = await findStudentEnrollment(
+    student._id,
+    currentSession._id,
+    currentTerm._id,
+  );
+
+  if (
+    !classSubject ||
+    !enrollment ||
+    String(enrollment.schoolClass) !== String(classSubject.schoolClass)
+  ) {
+    throw new ApiError(403, "You are not enrolled in the class for this assessment.");
+  }
 
   return assessment;
 };

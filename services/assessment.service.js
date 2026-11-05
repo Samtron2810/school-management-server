@@ -1,6 +1,5 @@
 import Assessment from "../models/Assessment.js";
 import AssessmentQuestion from "../models/AssessmentQuestion.js";
-import Enrollment from "../models/Enrollment.js";
 import Student from "../models/Student.js";
 import StudentAttempt from "../models/StudentAttempt.js";
 import Teacher from "../models/Teacher.js";
@@ -12,6 +11,7 @@ import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import { findStudentEnrollment } from "../utils/classRoster.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -556,12 +556,12 @@ const getAvailableAssessments = async (user) => {
   const { session, term } = await getCurrentAcademicContext();
   const now = new Date();
 
-  const enrollment = await Enrollment.findOne({
-    student: student._id,
-    session: session._id,
-    term: term._id,
-    status: "Active",
-  }).populate("schoolClass");
+  const enrollment = await findStudentEnrollment(
+    student._id,
+    session._id,
+    term._id,
+    { populate: "schoolClass" },
+  );
 
   if (!enrollment) {
     return [];
