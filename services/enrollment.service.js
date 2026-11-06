@@ -9,6 +9,7 @@ import SubjectScore from "../models/SubjectScore.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import withTransaction from "../utils/withTransaction.js";
+import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
 
 const createEnrollment = async (data) => {
@@ -155,6 +156,29 @@ const getEnrollments = async () => {
   });
 };
 
+// Active students who aren't on any class list yet this session — the list
+// to pick from when enrolling new students. Anyone with a row for the
+// current term (any status) is also left out, since a second row for the
+// same term would be rejected.
+const getUnenrolledStudents = async () => {
+  const { session, term } = await getCurrentAcademicContext();
+
+  const [inSession, inTerm] = await Promise.all([
+    Enrollment.distinct("student", {
+      session: session._id,
+      status: "Active",
+    }),
+    Enrollment.distinct("student", { term: term._id }),
+  ]);
+
+  return await Student.find({
+    isActive: true,
+    _id: { $nin: [...inSession, ...inTerm] },
+  })
+    .populate("user", "firstName lastName otherName")
+    .sort({ createdAt: -1 });
+};
+
 const getEnrollment = async (enrollmentId) => {
   const enrollment = await populateEnrollment(
     Enrollment.findById(enrollmentId),
@@ -232,6 +256,7 @@ export default {
   createEnrollment,
   bulkCreateEnrollments,
   getEnrollments,
+  getUnenrolledStudents,
   getEnrollment,
   updateEnrollment,
   deleteEnrollment,

@@ -22,6 +22,15 @@ const bulkCreateEnrollments = asyncHandler(async (req, res) => {
     );
 });
 
+const getUnenrolledStudents = asyncHandler(async (req, res) => {
+  const students = await enrollmentService.getUnenrolledStudents();
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, "Unenrolled students fetched successfully.", students),
+    );
+});
+
 const getEnrollments = asyncHandler(async (req, res) => {
   const enrollments = await enrollmentService.getEnrollments();
   return res
@@ -66,6 +75,7 @@ export default {
   createEnrollment,
   bulkCreateEnrollments,
   getEnrollments,
+  getUnenrolledStudents,
   getEnrollment,
   updateEnrollment,
   deleteEnrollment,

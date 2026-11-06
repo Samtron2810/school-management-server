@@ -45,7 +45,7 @@ export const heavyReadLimiter = rateLimit({
 const createAuthRateLimiter = (message, prefix) =>
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 5,
+    max: 15,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === "OPTIONS",

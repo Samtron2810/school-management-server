@@ -36,6 +36,14 @@ router.get(
   enrollmentController.getEnrollments,
 );
 
+// Before "/:id" so "unenrolled" isn't read as an enrollment id.
+router.get(
+  "/unenrolled",
+  protect,
+  authorize("admin"),
+  enrollmentController.getUnenrolledStudents,
+);
+
 router.get(
   "/:id",
   protect,
