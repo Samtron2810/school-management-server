@@ -7,6 +7,7 @@ import validate from "../middlewares/validation.middleware.js";
 
 import {
   createStudentValidator,
+  bulkCreateStudentValidator,
   updateStudentValidator,
 } from "../validators/student.validator.js";
 
@@ -19,6 +20,17 @@ router.post(
   createStudentValidator,
   validate,
   studentController.createStudent,
+);
+
+// Bulk-add students (dryRun: true only validates). Rows succeed or fail
+// individually.
+router.post(
+  "/bulk",
+  protect,
+  authorize("admin"),
+  bulkCreateStudentValidator,
+  validate,
+  studentController.bulkCreateStudents,
 );
 
 router.get("/", protect, authorize("admin"), studentController.getStudents);

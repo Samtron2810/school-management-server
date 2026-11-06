@@ -73,3 +73,11 @@ export const updateStudentValidator = [
 
   body("isActive").optional().isBoolean(),
 ];
+
+export const bulkCreateStudentValidator = [
+  body("students")
+    .isArray({ min: 1, max: 300 })
+    .withMessage("students must be a list of 1-300 students"),
+
+  body("dryRun").optional().isBoolean(),
+];

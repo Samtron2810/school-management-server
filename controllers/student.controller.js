@@ -11,6 +11,22 @@ const createStudent = asyncHandler(async (req, res) => {
     .json(new ApiResponse(201, "Student created successfully.", student));
 });
 
+const bulkCreateStudents = asyncHandler(async (req, res) => {
+  const result = await studentService.bulkCreateStudents(req.body);
+
+  return res
+    .status(result.dryRun ? 200 : 201)
+    .json(
+      new ApiResponse(
+        result.dryRun ? 200 : 201,
+        result.dryRun
+          ? "Students validated."
+          : `${result.createdCount} student(s) created.`,
+        result,
+      ),
+    );
+});
+
 const getStudents = asyncHandler(async (req, res) => {
   const students = await studentService.getStudents();
 
@@ -37,6 +53,7 @@ const updateStudent = asyncHandler(async (req, res) => {
 
 export default {
   createStudent,
+  bulkCreateStudents,
   getStudents,
   getStudent,
   updateStudent,
