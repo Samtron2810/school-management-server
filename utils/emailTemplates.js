@@ -3,7 +3,7 @@
  * @param {{ firstName: string, verifyUrl: string, role: string }} params
  */
 export const emailVerificationTemplate = ({ firstName, verifyUrl, role }) => ({
-  subject: "Verify your TronSchool email address",
+  subject: "Verify your Primadonna Pristine School email address",
   html: `
 <!DOCTYPE html>
 <html lang="en">
@@ -19,14 +19,14 @@ export const emailVerificationTemplate = ({ firstName, verifyUrl, role }) => ({
         <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
           <tr>
             <td style="background:#3b1f6e;padding:32px 40px;">
-              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">TronSchool</h1>
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">Primadonna Pristine School</h1>
             </td>
           </tr>
           <tr>
             <td style="padding:40px;">
               <p style="margin:0 0 8px;color:#111827;font-size:16px;">Hi ${firstName},</p>
               <p style="margin:0 0 8px;color:#374151;font-size:15px;line-height:1.6;">
-                Your TronSchool account has been created with the role of <strong>${role}</strong>.
+                Your Primadonna Pristine School account has been created with the role of <strong>${role}</strong>.
               </p>
               <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">
                 Please verify your email address to activate your account. This link expires in <strong>24 hours</strong>.
@@ -55,7 +55,7 @@ export const emailVerificationTemplate = ({ firstName, verifyUrl, role }) => ({
           <tr>
             <td style="padding:24px 40px;border-top:1px solid #e5e7eb;">
               <p style="margin:0;color:#9ca3af;font-size:12px;">
-                &copy; ${new Date().getFullYear()} TronSchool. All rights reserved.
+                &copy; ${new Date().getFullYear()} Primadonna Pristine School. All rights reserved.
               </p>
             </td>
           </tr>
@@ -73,7 +73,7 @@ export const emailVerificationTemplate = ({ firstName, verifyUrl, role }) => ({
  * @param {{ firstName: string, resetUrl: string }} params
  */
 export const passwordResetTemplate = ({ firstName, resetUrl }) => ({
-  subject: "Reset your TronSchool password",
+  subject: "Reset your Primadonna Pristine School password",
   html: `
 <!DOCTYPE html>
 <html lang="en">
@@ -90,7 +90,7 @@ export const passwordResetTemplate = ({ firstName, resetUrl }) => ({
           <!-- Header -->
           <tr>
             <td style="background:#1a56db;padding:32px 40px;">
-              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">TronSchool</h1>
+              <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;letter-spacing:-0.3px;">Primadonna Pristine School</h1>
             </td>
           </tr>
           <!-- Body -->
@@ -98,7 +98,7 @@ export const passwordResetTemplate = ({ firstName, resetUrl }) => ({
             <td style="padding:40px;">
               <p style="margin:0 0 16px;color:#111827;font-size:16px;">Hi ${firstName},</p>
               <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">
-                We received a request to reset the password for your TronSchool account.
+                We received a request to reset the password for your Primadonna Pristine School account.
                 Click the button below to choose a new password. This link expires in <strong>1 hour</strong>.
               </p>
               <table cellpadding="0" cellspacing="0" style="margin:0 0 32px;">
@@ -127,7 +127,7 @@ export const passwordResetTemplate = ({ firstName, resetUrl }) => ({
           <tr>
             <td style="padding:24px 40px;border-top:1px solid #e5e7eb;">
               <p style="margin:0;color:#9ca3af;font-size:12px;">
-                &copy; ${new Date().getFullYear()} TronSchool. All rights reserved.
+                &copy; ${new Date().getFullYear()} Primadonna Pristine School. All rights reserved.
               </p>
             </td>
           </tr>

@@ -22,7 +22,7 @@ const seedAdmin = async () => {
     const admin = await User.create({
       firstName: "System",
       lastName: "Administrator",
-      otherName: "TronSchool",
+      otherName: "Primadonna Pristine School",
       username: "admin",
       email: "admin@tronschool.com",
       password: "Admin@123",

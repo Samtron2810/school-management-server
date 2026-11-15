@@ -27,7 +27,7 @@ export const sendMail = async ({ to, toName, subject, html, text }) => {
 
   await client.transactionalEmails.sendTransacEmail({
     sender: {
-      name: env.BREVO_SENDER_NAME || "TronSchool",
+      name: env.BREVO_SENDER_NAME || "Primadonna Pristine School",
       email: env.BREVO_SENDER_EMAIL,
     },
     to: [{ email: to, name: toName || to }],

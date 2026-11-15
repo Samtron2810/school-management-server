@@ -75,7 +75,7 @@ app.use(sanitizeRequest);
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
-    message: "TronSchool API is running",
+    message: "Primadonna Pristine School API is running",
   });
 });
 

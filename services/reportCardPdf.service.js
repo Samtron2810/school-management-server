@@ -125,7 +125,7 @@ const drawReportCard = async (doc, card, ctx = null) => {
   };
 
   // ── Letterhead ──────────────────────────────────────────────────────────
-  const schoolName = settings?.schoolName || "TronSchool";
+  const schoolName = settings?.schoolName || "Primadonna Pristine School";
   const schoolAddress = settings?.address || "";
   const schoolEmail = settings?.email || "";
   const schoolPhone = settings?.phoneNumber || "";

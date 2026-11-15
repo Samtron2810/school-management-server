@@ -89,7 +89,7 @@ const schoolSettingSchema = new Schema(
   {
     schoolName: {
       type: String,
-      default: "TronSchool",
+      default: "Primadonna Pristine School",
       trim: true,
     },
 
