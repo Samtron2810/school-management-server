@@ -9,6 +9,8 @@ import withTransaction from "../utils/withTransaction.js";
 import settingService from "./setting.service.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
+import { getClassRoster } from "../utils/classRoster.js";
+import { findUserIdsBySearch, searchRegex, SEARCH_RESULT_LIMIT } from "../utils/personSearch.js";
 
 const createStudent = async (data) => {
   const email = data.email?.trim().toLowerCase();
@@ -84,10 +86,88 @@ const createStudent = async (data) => {
   });
 };
 
-const getStudents = async () => {
-  return await Student.find()
+// The current class of each student (their Active enrollment this session),
+// attached to every row as `currentClass` ({ _id, fullName } or null).
+const attachCurrentClass = async (students) => {
+  if (students.length === 0) return [];
+
+  let sessionId = null;
+  try {
+    sessionId = (await getCurrentAcademicContext()).session._id;
+  } catch {
+    // no current session yet — everyone shows as unassigned
+  }
+
+  const classByStudent = new Map();
+  if (sessionId) {
+    const rows = await Enrollment.find({
+      student: { $in: students.map((s) => s._id) },
+      session: sessionId,
+      status: "Active",
+    })
+      .sort({ createdAt: 1 })
+      .populate("schoolClass");
+
+    // Oldest first, so the latest row for a student wins.
+    for (const row of rows) {
+      if (row.schoolClass) {
+        classByStudent.set(String(row.student), {
+          _id: row.schoolClass._id,
+          fullName: row.schoolClass.fullName,
+        });
+      }
+    }
+  }
+
+  return students.map((student) => ({
+    ...student.toJSON(),
+    currentClass: classByStudent.get(String(student._id)) || null,
+  }));
+};
+
+// GET /students — everything the page needs to list a group at a time.
+//   ?class=<classId>      active students on that class's list (this session)
+//   ?status=unassigned    active students with no class this session
+//   ?status=inactive      deactivated students
+//   ?search=<text>        name / username / email / admission number (2+ chars,
+//                         max 50 results), across all students
+// With no parameters it still returns every student (used by pickers).
+const getStudents = async (query = {}) => {
+  const filter = {};
+
+  if (query.search !== undefined && query.search !== "") {
+    const regex = searchRegex(query.search);
+    if (!regex) return [];
+
+    const userIds = await findUserIdsBySearch(query.search, "student");
+    filter.$or = [{ user: { $in: userIds } }, { admissionNumber: regex }];
+  } else if (query.class) {
+    const { session } = await getCurrentAcademicContext();
+    const roster = await getClassRoster(query.class, session._id, {
+      statuses: ["Active"],
+    });
+    filter._id = { $in: roster.map((row) => row.student) };
+    filter.isActive = true;
+  } else if (query.status === "unassigned") {
+    const { session, term } = await getCurrentAcademicContext();
+    const [inSession, inTerm] = await Promise.all([
+      Enrollment.distinct("student", { session: session._id, status: "Active" }),
+      Enrollment.distinct("student", { term: term._id }),
+    ]);
+    filter._id = { $nin: [...inSession, ...inTerm] };
+    filter.isActive = true;
+  } else if (query.status === "inactive") {
+    filter.isActive = false;
+  }
+
+  const isSearch = query.search !== undefined && query.search !== "";
+
+  const students = await Student.find(filter)
     .populate("user", "-password -refreshToken -__v")
-    .sort({ createdAt: -1 });
+    .sort(isSearch ? { admissionNumber: 1 } : { createdAt: -1 })
+    .limit(isSearch ? SEARCH_RESULT_LIMIT : 0);
+
+  return await attachCurrentClass(students);
 };
 
 const getStudent = async (studentId) => {

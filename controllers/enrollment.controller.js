@@ -32,7 +32,7 @@ const getUnenrolledStudents = asyncHandler(async (req, res) => {
 });
 
 const getEnrollments = asyncHandler(async (req, res) => {
-  const enrollments = await enrollmentService.getEnrollments();
+  const enrollments = await enrollmentService.getEnrollments(req.query);
   return res
     .status(200)
     .json(

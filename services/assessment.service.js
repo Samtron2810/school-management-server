@@ -515,12 +515,36 @@ const getAssessment = async (assessmentId) => {
 |--------------------------------------------------------------------------
 */
 
-const getAssessments = async (filter = {}) => {
+// Only these query keys narrow the list; anything else in the query string
+// is ignored (it used to be spread straight into the database filter).
+//   ?class=<id> ?session=<id> ?term=<id> ?type=<type> ?teacher=<id>
+//   ?classSubject=<id> ?isPublished=true|false
+const getAssessments = async (query = {}) => {
+  const filter = {};
+
+  for (const key of ["session", "term", "type", "teacher", "classSubject"]) {
+    if (typeof query[key] === "string" && query[key]) filter[key] = query[key];
+  }
+  if (query.isPublished === "true") filter.isPublished = true;
+  if (query.isPublished === "false") filter.isPublished = false;
+
+  if (typeof query.class === "string" && query.class) {
+    const classSubjectIds = await ClassSubject.distinct("_id", {
+      schoolClass: query.class,
+    });
+    filter.classSubject = filter.classSubject
+      ? { $in: classSubjectIds.filter((id) => String(id) === filter.classSubject) }
+      : { $in: classSubjectIds };
+  }
+
   return await Assessment.find({
     ...filter,
     isActive: true,
   })
-    .populate("teacher")
+    .populate({
+      path: "teacher",
+      populate: { path: "user", select: "firstName lastName otherName username" },
+    })
     .populate("teacherAssignment")
     .populate({
       path: "classSubject",

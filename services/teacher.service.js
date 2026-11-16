@@ -5,6 +5,8 @@ import ApiError from "../utils/ApiError.js";
 import withTransaction from "../utils/withTransaction.js";
 import settingService from "./setting.service.js";
 import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
+import TeacherAssignment from "../models/TeacherAssignment.js";
+import { findUserIdsBySearch, searchRegex, SEARCH_RESULT_LIMIT } from "../utils/personSearch.js";
 
 const createTeacher = async (data) => {
   // Auto-generate the teacher ID from school settings when not supplied
@@ -71,10 +73,42 @@ const createTeacher = async (data) => {
   });
 };
 
-const getTeachers = async () => {
-  return await Teacher.find()
+// GET /teachers
+//   ?subject=<id>        teachers currently assigned to that subject
+//   ?status=unassigned   active teachers with no class/subject assignment
+//   ?status=inactive     deactivated teachers
+//   ?search=<text>       name / username / email / teacher ID (2+ chars, max 50)
+// With no parameters it still returns every teacher (used by pickers).
+const getTeachers = async (query = {}) => {
+  const filter = {};
+  const isSearch = query.search !== undefined && query.search !== "";
+
+  if (isSearch) {
+    const regex = searchRegex(query.search);
+    if (!regex) return [];
+    const userIds = await findUserIdsBySearch(query.search, "teacher");
+    filter.$or = [{ user: { $in: userIds } }, { teacherId: regex }];
+  } else if (query.subject) {
+    const ids = await TeacherAssignment.distinct("teacher", {
+      subject: query.subject,
+      isActive: true,
+    });
+    filter._id = { $in: ids };
+    filter.isActive = true;
+  } else if (query.status === "unassigned") {
+    const assigned = await TeacherAssignment.distinct("teacher", {
+      isActive: true,
+    });
+    filter._id = { $nin: assigned };
+    filter.isActive = true;
+  } else if (query.status === "inactive") {
+    filter.isActive = false;
+  }
+
+  return await Teacher.find(filter)
     .populate("user", "-password -refreshToken -__v")
-    .sort({ createdAt: -1 });
+    .sort(isSearch ? { teacherId: 1 } : { createdAt: -1 })
+    .limit(isSearch ? SEARCH_RESULT_LIMIT : 0);
 };
 
 const getTeacher = async (teacherId) => {

@@ -11,6 +11,7 @@ import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import withTransaction from "../utils/withTransaction.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
+import { findUserIdsBySearch, searchRegex } from "../utils/personSearch.js";
 
 const createEnrollment = async (data) => {
   const student = await Student.findById(data.student);
@@ -150,10 +151,35 @@ const populateEnrollment = (query) =>
     .populate("session", "name")
     .populate("term", "name");
 
-const getEnrollments = async () => {
-  return await populateEnrollment(Enrollment.find()).sort({
-    createdAt: -1,
-  });
+// GET /enrollments
+//   ?class=<id> ?session=<id> ?term=<id> ?status=<Active|...>   any combination
+//   ?search=<text>   a student's name / admission number (2+ chars), across
+//                    all sessions (max 200 rows)
+// With no parameters it still returns every enrollment.
+const getEnrollments = async (query = {}) => {
+  const filter = {};
+
+  for (const key of ["session", "term", "status"]) {
+    if (query[key]) filter[key] = query[key];
+  }
+  if (query.class) filter.schoolClass = query.class;
+
+  const isSearch = query.search !== undefined && query.search !== "";
+  if (isSearch) {
+    const regex = searchRegex(query.search);
+    if (!regex) return [];
+    const userIds = await findUserIdsBySearch(query.search, "student");
+    const students = await Student.find({
+      $or: [{ user: { $in: userIds } }, { admissionNumber: regex }],
+    })
+      .select("_id")
+      .limit(100);
+    filter.student = { $in: students.map((s) => s._id) };
+  }
+
+  return await populateEnrollment(Enrollment.find(filter))
+    .sort({ createdAt: -1 })
+    .limit(isSearch ? 200 : 0);
 };
 
 // Active students who aren't on any class list yet this session — the list

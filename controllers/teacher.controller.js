@@ -12,7 +12,7 @@ const createTeacher = asyncHandler(async (req, res) => {
 });
 
 const getTeachers = asyncHandler(async (req, res) => {
-  const teachers = await teacherService.getTeachers();
+  const teachers = await teacherService.getTeachers(req.query);
 
   return res
     .status(200)

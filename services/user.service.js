@@ -6,6 +6,7 @@ import { sendMail } from "../config/mailer.js";
 import { emailVerificationTemplate } from "../utils/emailTemplates.js";
 import env from "../config/env.js";
 import logger from "../config/logger.js";
+import { findUserIdsBySearch, SEARCH_RESULT_LIMIT } from "../utils/personSearch.js";
 
 const EMAIL_VERIFY_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -62,8 +63,26 @@ const createUser = async (data) => {
   return user;
 };
 
-const getUsers = async () => {
-  return await User.find().sort({ createdAt: -1 });
+// GET /users
+//   ?role=<admin|teacher|student|parent>   accounts with that role
+//   ?search=<text>                          name / username / email (2+ chars,
+//                                           max 50), optionally within a role
+// With no parameters it still returns every user (used by pickers).
+const getUsers = async (query = {}) => {
+  const filter = {};
+  const validRoles = ["admin", "teacher", "student", "parent"];
+  if (validRoles.includes(query.role)) filter.role = query.role;
+
+  const isSearch = query.search !== undefined && query.search !== "";
+  if (isSearch) {
+    const ids = await findUserIdsBySearch(query.search, filter.role || null);
+    if (!ids) return [];
+    filter._id = { $in: ids };
+  }
+
+  return await User.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(isSearch ? SEARCH_RESULT_LIMIT : 0);
 };
 
 const getUser = async (userId) => {

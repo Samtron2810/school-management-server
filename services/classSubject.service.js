@@ -72,9 +72,19 @@ const bulkCreateClassSubjects = async (data) => {
   return result;
 };
 
-const getClassSubjects = async () => {
+// Optional ?class=<id> narrows the cached full list.
+const getClassSubjects = async (query = {}) => {
+  const only = (list) =>
+    query.class
+      ? list.filter(
+          (row) =>
+            String(row.schoolClass?._id ?? row.schoolClass) ===
+            String(query.class),
+        )
+      : list;
+
   const cached = await cacheGet(CACHE_KEY);
-  if (cached) return cached;
+  if (cached) return only(cached);
 
   const list = await ClassSubject.find()
     .populate("schoolClass")
@@ -83,7 +93,7 @@ const getClassSubjects = async () => {
     .lean();
 
   await cacheSet(CACHE_KEY, list, CACHE_TTL);
-  return list;
+  return only(list);
 };
 
 const getClassSubject = async (classSubjectId) => {

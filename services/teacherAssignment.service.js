@@ -76,8 +76,19 @@ const populateAssignment = (query) =>
     .populate("session", "name")
     .populate("term", "name");
 
-const getTeacherAssignments = async () => {
-  return await populateAssignment(TeacherAssignment.find()).sort({
+// GET /teacher-assignments
+//   ?class=<id> ?teacher=<id> ?subject=<id> ?session=<id> ?term=<id>
+// Any combination narrows the list; with none it returns every assignment.
+const getTeacherAssignments = async (query = {}) => {
+  const filter = {};
+  for (const key of ["teacher", "subject", "session", "term"]) {
+    if (typeof query[key] === "string" && query[key]) filter[key] = query[key];
+  }
+  if (typeof query.class === "string" && query.class) {
+    filter.schoolClass = query.class;
+  }
+
+  return await populateAssignment(TeacherAssignment.find(filter)).sort({
     createdAt: -1,
   });
 };

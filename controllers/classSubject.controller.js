@@ -31,7 +31,7 @@ const bulkCreateClassSubjects = asyncHandler(async (req, res) => {
 });
 
 const getClassSubjects = asyncHandler(async (req, res) => {
-  const classSubjects = await classSubjectService.getClassSubjects();
+  const classSubjects = await classSubjectService.getClassSubjects(req.query);
   return res
     .status(200)
     .json(

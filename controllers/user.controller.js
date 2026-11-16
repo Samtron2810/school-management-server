@@ -12,7 +12,7 @@ const createUser = asyncHandler(async (req, res) => {
 });
 
 const getUsers = asyncHandler(async (req, res) => {
-  const users = await userService.getUsers();
+  const users = await userService.getUsers(req.query);
 
   return res
     .status(200)

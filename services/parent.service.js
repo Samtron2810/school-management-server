@@ -7,6 +7,8 @@ import ApiError from "../utils/ApiError.js";
 import withTransaction from "../utils/withTransaction.js";
 import settingService from "./setting.service.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
+import { getClassRoster } from "../utils/classRoster.js";
+import { findUserIdsBySearch, searchRegex, SEARCH_RESULT_LIMIT } from "../utils/personSearch.js";
 
 const createParent = async (data) => {
   // Auto-generate the parent ID when not supplied.
@@ -66,12 +68,43 @@ const createParent = async (data) => {
   });
 };
 
-const getParents = async () => {
-  return await Parent.find()
-    .populate("user", "-password -refreshToken -__v")
-    .sort({
-      createdAt: -1,
+// GET /parents
+//   ?class=<id>          parents of students on that class's list (this session)
+//   ?status=nochild      active parents with no child linked yet
+//   ?status=inactive     deactivated parents
+//   ?search=<text>       name / username / email / parent ID (2+ chars, max 50)
+// With no parameters it still returns every parent.
+const getParents = async (query = {}) => {
+  const filter = {};
+  const isSearch = query.search !== undefined && query.search !== "";
+
+  if (isSearch) {
+    const regex = searchRegex(query.search);
+    if (!regex) return [];
+    const userIds = await findUserIdsBySearch(query.search, "parent");
+    filter.$or = [{ user: { $in: userIds } }, { parentId: regex }];
+  } else if (query.class) {
+    const { session } = await getCurrentAcademicContext();
+    const roster = await getClassRoster(query.class, session._id, {
+      statuses: ["Active"],
     });
+    const parentIds = await ParentStudent.distinct("parent", {
+      student: { $in: roster.map((row) => row.student) },
+      isActive: true,
+    });
+    filter._id = { $in: parentIds };
+  } else if (query.status === "nochild") {
+    const linked = await ParentStudent.distinct("parent", { isActive: true });
+    filter._id = { $nin: linked };
+    filter.isActive = true;
+  } else if (query.status === "inactive") {
+    filter.isActive = false;
+  }
+
+  return await Parent.find(filter)
+    .populate("user", "-password -refreshToken -__v")
+    .sort(isSearch ? { parentId: 1 } : { createdAt: -1 })
+    .limit(isSearch ? SEARCH_RESULT_LIMIT : 0);
 };
 
 const getParentById = async (id) => {

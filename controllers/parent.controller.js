@@ -10,7 +10,7 @@ const createParent = asyncHandler(async (req, res) => {
 });
 
 const getParents = asyncHandler(async (req, res) => {
-  const parents = await parentService.getParents();
+  const parents = await parentService.getParents(req.query);
   return res
     .status(200)
     .json(new ApiResponse(200, "Parents fetched successfully.", parents));

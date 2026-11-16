@@ -28,7 +28,7 @@ const bulkCreateStudents = asyncHandler(async (req, res) => {
 });
 
 const getStudents = asyncHandler(async (req, res) => {
-  const students = await studentService.getStudents();
+  const students = await studentService.getStudents(req.query);
 
   return res
     .status(200)
