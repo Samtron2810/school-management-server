@@ -3,9 +3,18 @@ import env from "./env.js";
 
 let redis = null;
 
+// Resolves with the client once Redis is ready (null if Redis is disabled).
+// Lets things created at import time (the rate-limit store) wait for it.
+let resolveReady;
+const readyPromise = new Promise((resolve) => {
+  resolveReady = resolve;
+});
+export const whenRedisReady = () => readyPromise;
+
 export const connectRedis = () => {
   if (!env.REDIS_URL) {
     console.warn("[Redis] REDIS_URL not set — caching disabled.");
+    resolveReady(null);
     return null;
   }
 
@@ -17,6 +26,7 @@ export const connectRedis = () => {
   });
 
   redis.on("connect", () => console.log("[Redis] Connected."));
+  redis.once("ready", () => resolveReady(redis));
   redis.on("error", (err) => console.error("[Redis] Error:", err.message));
   redis.on("reconnecting", () => console.log("[Redis] Reconnecting..."));
 

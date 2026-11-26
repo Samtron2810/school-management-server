@@ -88,9 +88,24 @@ const userSchema = new Schema(
     passwordChangedAt: {
       type: Date,
     },
+    // Legacy single refresh token — only read so sessions created before
+    // the multi-session change keep working until they next refresh.
     refreshToken: {
       type: String,
       select: false,
+    },
+    // One entry per signed-in browser/device (see utils/refreshSessions.js).
+    sessions: {
+      type: [
+        {
+          _id: false,
+          jti: String,
+          hash: String,
+          updatedAt: Date,
+        },
+      ],
+      select: false,
+      default: [],
     },
 
     tokenVersion: {

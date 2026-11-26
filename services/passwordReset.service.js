@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import { clearSessions } from "../utils/refreshSessions.js";
 import ApiError from "../utils/ApiError.js";
 import {
   generateResetToken,
@@ -67,7 +68,7 @@ const resetPassword = async ({ token, newPassword }) => {
   const user = await User.findOne({
     passwordResetToken: hash,
     passwordResetExpires: { $gt: Date.now() },
-  }).select("+passwordResetToken +passwordResetExpires +refreshToken");
+  }).select("+passwordResetToken +passwordResetExpires +refreshToken +sessions");
 
   if (!user) {
     throw new ApiError(400, "Reset link is invalid or has expired.");
@@ -78,7 +79,7 @@ const resetPassword = async ({ token, newPassword }) => {
   user.passwordResetToken = undefined;
   user.passwordResetExpires = undefined;
   // Invalidate all existing sessions
-  user.refreshToken = undefined;
+  clearSessions(user);
   user.tokenVersion = (user.tokenVersion ?? 0) + 1;
 
   await user.save();

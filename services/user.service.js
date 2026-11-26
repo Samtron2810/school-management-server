@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import User from "../models/User.js";
+import { clearSessions } from "../utils/refreshSessions.js";
 import ApiError from "../utils/ApiError.js";
 import findDocumentOrFail from "../utils/findDocumentOrFail.js";
 import { sendMail } from "../config/mailer.js";
@@ -156,7 +157,7 @@ const resetUserPassword = async (userId, newPassword, requester) => {
     );
   }
 
-  const user = await User.findById(userId).select("+refreshToken");
+  const user = await User.findById(userId).select("+refreshToken +sessions");
 
   if (!user) {
     throw new ApiError(404, "User not found.");
@@ -164,7 +165,7 @@ const resetUserPassword = async (userId, newPassword, requester) => {
 
   user.password = newPassword;
   user.passwordChangedAt = new Date();
-  user.refreshToken = undefined;
+  clearSessions(user);
 
   await user.save();
 

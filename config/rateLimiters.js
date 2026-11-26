@@ -1,27 +1,29 @@
 import rateLimit from "express-rate-limit";
 import { RedisStore } from "rate-limit-redis";
-import { getRedis } from "./redis.js";
+import { whenRedisReady } from "./redis.js";
 
-// A single RedisStore whose sendCommand resolves the client lazily at request
-// time — after connectRedis() has run — rather than at module import time.
-// If Redis is not yet connected, getRedis() returns null and the command is a
-// no-op, which causes express-rate-limit to fall back to its MemoryStore.
+// The stores are created at import time, before connectRedis() has run, and
+// the store loads its Lua script immediately. So sendCommand waits until the
+// client is ready instead of answering null (which made the store's init
+// throw "unexpected reply from redis client"). With Redis disabled it
+// resolves null and the limiter falls back to passOnStoreError below.
 const makeLazyStore = (prefix) =>
   new RedisStore({
     prefix,
-    sendCommand: (...args) => {
-      const redis = getRedis();
-      if (!redis) return Promise.resolve(null);
+    sendCommand: async (...args) => {
+      const redis = await whenRedisReady();
+      if (!redis) throw new Error("Redis unavailable");
       return redis.call(...args);
     },
   });
 
 export const apiRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: 1000, // per IP — a whole school can share one Wi-Fi address
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.method === "OPTIONS" || req.method === "GET",
+  passOnStoreError: true, // never block requests because Redis hiccuped
   store: makeLazyStore("rl:api:"),
   message: {
     success: false,
@@ -35,6 +37,7 @@ export const heavyReadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.method === "OPTIONS",
+  passOnStoreError: true, // never block requests because Redis hiccuped
   store: makeLazyStore("rl:heavy:"),
   message: {
     success: false,
@@ -42,13 +45,15 @@ export const heavyReadLimiter = rateLimit({
   },
 });
 
-const createAuthRateLimiter = (message, prefix) =>
+const createAuthRateLimiter = (message, prefix, { failedOnly = false } = {}) =>
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 15,
+    max: 5,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.method === "OPTIONS",
+    skipSuccessfulRequests: failedOnly,
+    passOnStoreError: true, // never block requests because Redis hiccuped
     store: makeLazyStore(prefix),
     message: { success: false, message },
   });
@@ -56,6 +61,7 @@ const createAuthRateLimiter = (message, prefix) =>
 export const loginRateLimiter = createAuthRateLimiter(
   "Too many login attempts, please try again later.",
   "rl:login:",
+  { failedOnly: true }, // good logins don't count — only wrong passwords
 );
 
 export const passwordChangeRateLimiter = createAuthRateLimiter(

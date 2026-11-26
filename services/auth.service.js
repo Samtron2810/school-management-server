@@ -1,4 +1,3 @@
-import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 
 import ApiError from "../utils/ApiError.js";
@@ -6,6 +5,7 @@ import logger from "../config/logger.js";
 
 import generateAccessToken from "../utils/generateAccessToken.js";
 import generateRefreshToken from "../utils/generateRefreshToken.js";
+import { addSession } from "../utils/refreshSessions.js";
 
 const login = async ({ identifier, password }) => {
   const user = await User.findOne({
@@ -13,7 +13,7 @@ const login = async ({ identifier, password }) => {
       { email: identifier.toLowerCase() },
       { username: identifier.toLowerCase() },
     ],
-  }).select("+password +refreshToken +failedLoginAttempts +lockUntil");
+  }).select("+password +sessions +failedLoginAttempts +lockUntil");
 
   if (!user) {
     throw new ApiError(401, "Invalid credentials");
@@ -50,7 +50,7 @@ const login = async ({ identifier, password }) => {
 
   const refreshToken = generateRefreshToken(user);
 
-  user.refreshToken = await bcrypt.hash(refreshToken, 12);
+  addSession(user, refreshToken);
 
   user.lastLogin = new Date();
 

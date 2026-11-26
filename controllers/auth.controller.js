@@ -1,10 +1,16 @@
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
 
 import env from "../config/env.js";
 import { cacheSet, getRedis } from "../config/redis.js";
 
 import User from "../models/User.js";
+import {
+  addSession,
+  findSession,
+  rotateSession,
+  removeSession,
+  clearSessions,
+} from "../utils/refreshSessions.js";
 
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponse.js";
@@ -127,7 +133,7 @@ const refreshToken = asyncHandler(async (req, res) => {
     throw new ApiError(401, "Invalid refresh token.");
   }
 
-  const user = await User.findById(decoded.id).select("+refreshToken");
+  const user = await User.findById(decoded.id).select("+refreshToken +sessions");
   if (!user) throw new ApiError(401, "User not found.");
   if (!user.isActive) throw new ApiError(403, "Your account has been deactivated.");
 
@@ -144,13 +150,17 @@ const refreshToken = asyncHandler(async (req, res) => {
     throw new ApiError(401, "Your password has changed. Please sign in again.");
   }
 
-  const valid = await user.compareRefreshToken(token);
+  // Valid if it matches one of this account's sessions — or, for people who
+  // signed in before multi-session support, the legacy single token.
+  let valid = Boolean(findSession(user, token));
+  if (!valid && user.refreshToken) valid = await user.compareRefreshToken(token);
   if (!valid) throw new ApiError(401, "Invalid refresh token.");
 
   const accessToken = generateAccessToken(user);
   const newRefreshToken = generateRefreshToken(user);
 
-  user.refreshToken = await bcrypt.hash(newRefreshToken, 12);
+  if (findSession(user, token)) rotateSession(user, token, newRefreshToken);
+  else addSession(user, newRefreshToken); // legacy token → first real session
   await user.save();
 
   setAuthCookies(res, accessToken, newRefreshToken);
@@ -168,10 +178,11 @@ const logout = asyncHandler(async (req, res) => {
   if (refreshTokenValue) {
     try {
       const decodedRefresh = jwt.verify(refreshTokenValue, env.REFRESH_TOKEN_SECRET);
-      const user = await User.findById(decodedRefresh.id).select("+refreshToken");
+      const user = await User.findById(decodedRefresh.id).select("+refreshToken +sessions");
 
-      if (user && user.refreshToken) {
-        user.refreshToken = undefined;
+      if (user) {
+        // Only THIS device signs out; other people on the account stay in.
+        removeSession(user, refreshTokenValue);
         await user.save();
 
         if (accessTokenValue) {
@@ -188,7 +199,7 @@ const logout = asyncHandler(async (req, res) => {
 });
 
 const logoutAll = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).select("+refreshToken");
+  const user = await User.findById(req.user._id).select("+refreshToken +sessions");
   if (!user) throw new ApiError(401, "User not found.");
 
   const accessTokenValue = req.accessToken || getAccessTokenFromRequest(req);
@@ -196,7 +207,7 @@ const logoutAll = asyncHandler(async (req, res) => {
     await blacklistAccessToken(accessTokenValue, user._id);
   }
 
-  user.refreshToken = undefined;
+  clearSessions(user);
   user.tokenVersion = (user.tokenVersion ?? 0) + 1;
   await user.save();
 
@@ -231,7 +242,7 @@ const updateMe = asyncHandler(async (req, res) => {
 const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
-  const user = await User.findById(req.user._id).select("+password +refreshToken");
+  const user = await User.findById(req.user._id).select("+password +refreshToken +sessions");
   if (!user) throw new ApiError(404, "User not found.");
 
   const isMatch = await user.comparePassword(currentPassword);
@@ -239,7 +250,7 @@ const changePassword = asyncHandler(async (req, res) => {
 
   user.password = newPassword;
   user.passwordChangedAt = new Date();
-  user.refreshToken = undefined;
+  clearSessions(user);
   await user.save();
 
   clearAuthCookies(res);
