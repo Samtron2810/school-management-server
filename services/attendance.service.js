@@ -14,6 +14,7 @@ import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache } from "./dashboard.service.js";
 import { startOfDayUTC, dayRangeUTC } from "../utils/normalizeDate.js";
 import { findStudentEnrollment, getClassRoster } from "../utils/classRoster.js";
+import { sortByName, studentUser } from "../utils/nameSort.js";
 
 /*
 |--------------------------------------------------------------------------
@@ -300,7 +301,7 @@ const getAttendanceByDate = async (teacherAssignmentId, date, user) => {
 
   const { start, end } = dayRangeUTC(date);
 
-  return await Attendance.find({
+  const records = await Attendance.find({
     classSubject: classSubject._id,
 
     date: { $gte: start, $lt: end },
@@ -314,10 +315,9 @@ const getAttendanceByDate = async (teacherAssignmentId, date, user) => {
         select: "firstName lastName otherName admissionNumber avatar",
       },
     })
-    .sort({
-      createdAt: 1,
-    })
     .lean();
+
+  return sortByName(records, studentUser);
 };
 
 /*
@@ -340,7 +340,7 @@ const getStudentAttendance = async (studentId, user) => {
       path: "teacher",
       populate: {
         path: "user",
-        select: "firstName lastName",
+        select: "firstName lastName otherName",
       },
     })
     .populate({
@@ -519,7 +519,7 @@ async function getClassRegister(schoolClassId, date, user) {
   const endOfDay = new Date(day);
   endOfDay.setHours(23, 59, 59, 999);
 
-  return await Attendance.find({
+  const records = await Attendance.find({
     classSubject: { $in: classSubjects.map((item) => item._id) },
     date: { $gte: startOfDay, $lte: endOfDay },
     isActive: true,
@@ -540,6 +540,9 @@ async function getClassRegister(schoolClassId, date, user) {
     })
     .sort({ createdAt: 1 })
     .lean();
+
+  // Stable sort: A→Z by surname, subjects keep their recorded order.
+  return sortByName(records, studentUser);
 }
 
 /*
@@ -603,25 +606,19 @@ async function getClassAttendanceSummary(schoolClassId, query, user) {
     select: "firstName lastName otherName admissionNumber avatar",
   });
 
-  return students
-    .map((student) => {
-      const counts = countsByStudent.get(student._id.toString());
-      const effective = counts.present + counts.late;
+  const summary = students.map((student) => {
+    const counts = countsByStudent.get(student._id.toString());
+    const effective = counts.present + counts.late;
 
-      return {
-        student,
-        ...counts,
-        attendancePercentage:
-          counts.total > 0
-            ? Number(((effective / counts.total) * 100).toFixed(2))
-            : 0,
-      };
-    })
-    .sort((a, b) => {
-      const nameA =
-        `${a.student.user?.firstName ?? ""} ${a.student.user?.lastName ?? ""}`.trim();
-      const nameB =
-        `${b.student.user?.firstName ?? ""} ${b.student.user?.lastName ?? ""}`.trim();
-      return nameA.localeCompare(nameB);
-    });
+    return {
+      student,
+      ...counts,
+      attendancePercentage:
+        counts.total > 0
+          ? Number(((effective / counts.total) * 100).toFixed(2))
+          : 0,
+    };
+  });
+
+  return sortByName(summary, studentUser);
 }

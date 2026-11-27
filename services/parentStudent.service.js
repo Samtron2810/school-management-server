@@ -3,6 +3,7 @@ import Student from "../models/Student.js";
 import ParentStudent from "../models/ParentStudent.js";
 
 import ApiError from "../utils/ApiError.js";
+import { sortByName, studentUser } from "../utils/nameSort.js";
 
 const linkParentStudent = async (data) => {
   const parent = await Parent.findById(data.parent);
@@ -102,7 +103,7 @@ const getParentsOfStudent = async (studentId) => {
 };
 
 const getChildrenOfParent = async (parentId) => {
-  return await ParentStudent.find({
+  const links = await ParentStudent.find({
     parent: parentId,
     isActive: true,
   }).populate({
@@ -112,6 +113,8 @@ const getChildrenOfParent = async (parentId) => {
       select: "firstName lastName otherName",
     },
   });
+
+  return sortByName(links, studentUser);
 };
 
 const removeParentStudent = async (id) => {

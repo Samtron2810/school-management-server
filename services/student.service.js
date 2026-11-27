@@ -11,6 +11,7 @@ import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
 import { getClassRoster } from "../utils/classRoster.js";
 import { findUserIdsBySearch, searchRegex, SEARCH_RESULT_LIMIT } from "../utils/personSearch.js";
+import { sortByName } from "../utils/nameSort.js";
 
 const createStudent = async (data) => {
   const email = data.email?.trim().toLowerCase();
@@ -67,7 +68,7 @@ const createStudent = async (data) => {
           user: user._id,
           admissionNumber,
           gender: data.gender,
-          dateOfBirth: data.dateOfBirth,
+          dateOfBirth: data.dateOfBirth || null,
           admissionDate: data.admissionDate,
           address: data.address,
           bloodGroup: data.bloodGroup,
@@ -162,10 +163,15 @@ const getStudents = async (query = {}) => {
 
   const isSearch = query.search !== undefined && query.search !== "";
 
-  const students = await Student.find(filter)
+  const found = await Student.find(filter)
     .populate("user", "-password -refreshToken -__v")
     .sort(isSearch ? { admissionNumber: 1 } : { createdAt: -1 })
     .limit(isSearch ? SEARCH_RESULT_LIMIT : 0);
+
+  // Lists read A→Z by surname; search results keep admission-number order.
+  const students = isSearch
+    ? found
+    : sortByName(found, (student) => student.user);
 
   return await attachCurrentClass(students);
 };
@@ -327,13 +333,14 @@ const normalizeBulkRow = (raw, classByKey) => {
   };
 
   if (!row.firstName) errors.push("First name is required");
-  if (!row.lastName) errors.push("Last name is required");
+  if (!row.lastName) errors.push("Surname is required");
   if (!row.gender) errors.push("Gender must be Male or Female");
 
+  // Date of birth is optional; when given it must be a sensible date.
   const dob = parseDate(raw.dateOfBirth);
   const now = new Date();
-  if (!dob) errors.push("Date of birth is required or invalid");
-  else if (dob > now || dob.getFullYear() < 1950)
+  if (dob === undefined) errors.push("Date of birth is not a valid date");
+  else if (dob && (dob > now || dob.getFullYear() < 1950))
     errors.push("Date of birth looks wrong");
   row.dateOfBirth = dob || null;
 
@@ -357,9 +364,9 @@ const normalizeBulkRow = (raw, classByKey) => {
 };
 
 // POST /students/bulk
-// body: { students: [{ firstName, lastName, gender, dateOfBirth, ...optional }],
+// body: { students: [{ firstName, lastName, gender, ...optional }],
 //         dryRun?: boolean }
-// Optional per row: otherName, class (name, enrolls into the current
+// Optional per row: otherName, dateOfBirth, class (name, enrolls into the current
 // session/term), admissionNumber, username, email, password, phoneNumber,
 // address, admissionDate. Anything left blank is generated: admission number
 // from School Settings, username from the admission number, a placeholder

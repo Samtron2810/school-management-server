@@ -1,4 +1,5 @@
 import Enrollment from "../models/Enrollment.js";
+import { sortByName, studentUser } from "./nameSort.js";
 
 // Statuses that keep a student on a class list for a session. "Transferred"
 // and "Graduated" stay so a class's scores and report cards remain reachable
@@ -30,7 +31,16 @@ export const getClassRoster = async (
     if (!byStudent.has(key)) byStudent.set(key, row);
   }
 
-  return [...byStudent.values()];
+  const roster = [...byStudent.values()];
+
+  // A→Z by surname when the student's user is populated; otherwise keep
+  // roll-number order (callers that only need ids don't care).
+  const hasNames = roster.some((row) => {
+    const user = studentUser(row);
+    return user?.lastName !== undefined;
+  });
+
+  return hasNames ? sortByName(roster, studentUser) : roster;
 };
 
 // A student's enrollment for a session. Enrollments are created once (for

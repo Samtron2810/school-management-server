@@ -10,6 +10,7 @@ import withTransaction from "../utils/withTransaction.js";
 import { getClassRoster } from "../utils/classRoster.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache } from "./dashboard.service.js";
+import { compareUsersByName } from "../utils/nameSort.js";
 
 const resolveId = (value) => {
   if (!value) return null;
@@ -355,7 +356,7 @@ const getPromotions = async () => {
     .populate("toClass")
     .populate({
       path: "promotedBy",
-      select: "firstName lastName username role",
+      select: "firstName lastName otherName username role",
     })
     .sort({
       createdAt: -1,
@@ -363,7 +364,7 @@ const getPromotions = async () => {
 };
 
 const getPromotionById = async (promotionId) => {
-  return await findDocumentOrFail(Promotion, promotionId, "Promotion", {
+  const promotion = await findDocumentOrFail(Promotion, promotionId, "Promotion", {
     populate: [
       {
         path: "sourceSession",
@@ -389,7 +390,7 @@ const getPromotionById = async (promotionId) => {
       },
       {
         path: "promotedBy",
-        select: "firstName lastName username role",
+        select: "firstName lastName otherName username role",
       },
       {
         path: "results.student",
@@ -400,6 +401,15 @@ const getPromotionById = async (promotionId) => {
       },
     ],
   });
+
+  // Per-student results A→Z by surname.
+  if (Array.isArray(promotion.results)) {
+    promotion.results.sort((a, b) =>
+      compareUsersByName(a.student?.user, b.student?.user),
+    );
+  }
+
+  return promotion;
 };
 
 export default {

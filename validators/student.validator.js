@@ -22,7 +22,10 @@ export const createStudentValidator = [
 
   body("gender").isIn(["Male", "Female"]).withMessage("Gender is required"),
 
-  body("dateOfBirth").notEmpty().withMessage("Date of birth is required"),
+  body("dateOfBirth")
+    .optional({ values: "falsy" })
+    .isISO8601()
+    .withMessage("Invalid date of birth"),
 
   body("admissionDate").notEmpty().withMessage("Admission date is required"),
 ];
@@ -53,7 +56,11 @@ export const updateStudentValidator = [
     .isIn(["Male", "Female"])
     .withMessage("Gender must be Male or Female"),
 
-  body("dateOfBirth").optional().isISO8601().withMessage("Invalid date"),
+  // null clears it
+  body("dateOfBirth")
+    .optional({ values: "null" })
+    .isISO8601()
+    .withMessage("Invalid date of birth"),
 
   body("admissionDate").optional().isISO8601().withMessage("Invalid date"),
 

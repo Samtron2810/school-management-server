@@ -817,12 +817,20 @@ async function generateClassReportCards(schoolClassId, query, user) {
   }
   const session = await findDocumentOrFail(Session, sessionId, "Session");
 
-  const enrollments = await getClassRoster(schoolClass._id, session._id);
+  // Populating names lets the roster come back A→Z by surname.
+  const enrollments = await getClassRoster(schoolClass._id, session._id, {
+    populate: {
+      path: "student",
+      select: "user",
+      populate: { path: "user", select: "firstName lastName otherName" },
+    },
+  });
 
   const cards = await Promise.all(
     enrollments.map(async (enrollment) => {
       try {
-        return await generateReportCard(enrollment.student, query, user);
+        const studentId = enrollment.student?._id ?? enrollment.student;
+        return await generateReportCard(studentId, query, user);
       } catch {
         return null;
       }

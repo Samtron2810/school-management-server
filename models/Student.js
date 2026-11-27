@@ -23,9 +23,10 @@ const studentSchema = new Schema(
       required: true,
     },
 
+    // Optional — some schools don't have it at admission.
     dateOfBirth: {
       type: Date,
-      required: true,
+      default: null,
     },
 
     admissionDate: {

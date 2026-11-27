@@ -12,6 +12,7 @@ import withTransaction from "../utils/withTransaction.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { bustDashboardCache as bustDashboard } from "./dashboard.service.js";
 import { findUserIdsBySearch, searchRegex } from "../utils/personSearch.js";
+import { sortByName, studentUser } from "../utils/nameSort.js";
 
 const createEnrollment = async (data) => {
   const student = await Student.findById(data.student);
@@ -177,9 +178,12 @@ const getEnrollments = async (query = {}) => {
     filter.student = { $in: students.map((s) => s._id) };
   }
 
-  return await populateEnrollment(Enrollment.find(filter))
+  const enrollments = await populateEnrollment(Enrollment.find(filter))
     .sort({ createdAt: -1 })
     .limit(isSearch ? 200 : 0);
+
+  // A→Z by surname (newest row first for the same student).
+  return sortByName(enrollments, studentUser);
 };
 
 // Active students who aren't on any class list yet this session — the list
@@ -197,12 +201,12 @@ const getUnenrolledStudents = async () => {
     Enrollment.distinct("student", { term: term._id }),
   ]);
 
-  return await Student.find({
+  const students = await Student.find({
     isActive: true,
     _id: { $nin: [...inSession, ...inTerm] },
-  })
-    .populate("user", "firstName lastName otherName")
-    .sort({ createdAt: -1 });
+  }).populate("user", "firstName lastName otherName");
+
+  return sortByName(students, (student) => student.user);
 };
 
 const getEnrollment = async (enrollmentId) => {

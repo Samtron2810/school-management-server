@@ -9,6 +9,7 @@ import settingService from "./setting.service.js";
 import { getCurrentAcademicContext } from "../utils/academicContext.js";
 import { getClassRoster } from "../utils/classRoster.js";
 import { findUserIdsBySearch, searchRegex, SEARCH_RESULT_LIMIT } from "../utils/personSearch.js";
+import { sortByName, studentUser } from "../utils/nameSort.js";
 
 const createParent = async (data) => {
   // Auto-generate the parent ID when not supplied.
@@ -225,7 +226,7 @@ const getMyChildren = async (user) => {
   }
 
   const children = await Promise.all(
-    links.map(async (link) => {
+    sortByName(links, studentUser).map(async (link) => {
       let schoolClass = null;
 
       if (link.student && currentSessionId) {

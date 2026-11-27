@@ -1,5 +1,6 @@
 import { Schema, model } from "mongoose";
 import bcrypt from "bcryptjs";
+import { formatFullName } from "../utils/nameSort.js";
 
 const userSchema = new Schema(
   {
@@ -202,10 +203,9 @@ userSchema.methods.resetLoginAttempts = async function () {
   });
 };
 
+// Display format: "Surname Firstname Othername".
 userSchema.virtual("fullName").get(function () {
-  return [this.firstName, this.otherName, this.lastName]
-    .filter(Boolean)
-    .join(" ");
+  return formatFullName(this);
 });
 
 userSchema.pre("save", async function () {
